@@ -1,0 +1,65 @@
+# Docker Compose manifest for the KMS Backend Orchestrator microservice stack.
+# Defines a custom bridge network so the gateway can reach the AI core container
+# by its service name (internal DNS).
+#
+# Usage:
+#   cp .env.example .env
+#   docker compose up --build
+#
+# The hackathon starter-kit expects port 8000 exposed, .env loaded,
+# ./logs mounted, and a health check every 30 seconds.
+
+services:
+  backend-orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kms-backend-orchestrator
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # Inside the custom network the AI core is reachable by service name.
+      CORE_AI_URL: "http://kms-core-ai:8001/api/v1/search"
+    networks:
+      - kms-network
+    depends_on:
+      kms-core-ai:
+        condition: service_started
+    volumes:
+      # Persist rotating logs on the host for easy debugging.
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
+      interval: 30s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
+
+  kms-core-ai:
+    # TODO: Temporary placeholder. Replace this with the real kms-core-ai build
+    # context or a published image once the teammate completes the
+    # kms-core-ai Dockerfile and the service is ready for integration.
+    image: python:3.12-slim
+    command: sleep infinity
+    container_name: kms-core-ai
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    networks:
+      - kms-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/api/v1/health')"]
+      interval: 30s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
+
+networks:
+  kms-network:
+    driver: bridge
+    name: kms-network
