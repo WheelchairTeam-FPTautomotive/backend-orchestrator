@@ -1,0 +1,20 @@
+[project]
+name = "kms-backend-orchestrator"
+version = "0.1.0"
+description = "FastAPI API Gateway Orchestrator for Automotive Digital Cockpit"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.28.0",
+    "pydantic[email]>=2.6.4",
+    "requests>=2.31.0",
+    "python-multipart>=0.0.9",
+    "websockets>=12.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.1.1",
+    "ruff>=0.3.3",
+]
