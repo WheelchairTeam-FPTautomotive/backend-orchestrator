@@ -1,0 +1,37 @@
+### 1. Health Check
+GET http://localhost:8000/api/v1/health
+Accept: application/json
+
+###
+
+### 2. Copilot Query (Success Payload - Will return 503 until Core AI is running)
+POST http://localhost:8000/api/v1/copilot/query
+Content-Type: application/json
+
+{
+    "query": "Làm cách nào để bật hệ thống điều hòa HVAC trên buồng lái?"
+}
+
+###
+
+### 3. Copilot Query (Malformed Payload - Expect 422 Error)
+POST http://localhost:8000/api/v1/copilot/query
+Content-Type: application/json
+
+{
+    "wrong_field": "This should fail Pydantic validation"
+}
+
+###
+
+# -------------------------------------------------------------
+# TERMINAL COMMANDS REFERENCE (For PowerShell)
+# -------------------------------------------------------------
+# 1. Health Check:
+# curl.exe -s http://localhost:8000/api/v1/health
+#
+# 2. Copilot Query (Success Payload):
+# curl.exe -s -X POST http://localhost:8000/api/v1/copilot/query -H "Content-Type: application/json" -d "{\`"query\`": \`"Làm cách nào để bật hệ thống điều hòa HVAC trên buồng lái?\`"}"
+#
+# 3. Copilot Query (Malformed Payload / 422 Error):
+# curl.exe -s -X POST http://localhost:8000/api/v1/copilot/query -H "Content-Type: application/json" -d "{\`"wrong_field\`": \`"test\`"}"

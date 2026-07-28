@@ -16,7 +16,7 @@ CORE_AI_URL = os.getenv("CORE_AI_URL", "http://localhost:8001/api/v1/search")
 class QueryRequest(BaseModel):
     query: str
 
-class CitationInfo(BaseModel):
+class CitationPayload(BaseModel):
     document_id: str
     document_name: str
     section: str
@@ -26,7 +26,7 @@ class CitationInfo(BaseModel):
 class QueryResponse(BaseModel):
     query: str
     answer: str
-    citations: List[CitationInfo]
+    citations: List[CitationPayload]
     status: str
 
 # ==========================================

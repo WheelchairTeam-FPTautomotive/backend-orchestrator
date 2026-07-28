@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from api.v1.gateway import router as gateway_router
+from src.api.v1.gateway import router as gateway_router
 
 app = FastAPI(
     title="KMS Cockpit API Gateway Orchestrator",
