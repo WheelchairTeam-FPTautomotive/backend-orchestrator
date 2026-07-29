@@ -26,25 +26,24 @@ services:
       - kms-network
     depends_on:
       kms-core-ai:
-        condition: service_started
+        condition: service_healthy
     volumes:
       # Persist rotating logs on the host for easy debugging.
+      # The entrypoint fixes ownership so the non-root app user can write here.
       - ./logs:/app/logs
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
       interval: 30s
       timeout: 5s
-      start_period: 5s
+      start_period: 10s
       retries: 3
 
   kms-core-ai:
-    # TODO: Temporary placeholder. Replace this with the real kms-core-ai build
-    # context or a published image once the teammate completes the
-    # kms-core-ai Dockerfile and the service is ready for integration.
-    image: python:3.12-slim
-    command: sleep infinity
     container_name: kms-core-ai
+    build:
+      context: ../kms-core-ai
+      dockerfile: Dockerfile
     ports:
       - "8001:8001"
     env_file:
@@ -56,7 +55,7 @@ services:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/api/v1/health')"]
       interval: 30s
       timeout: 5s
-      start_period: 5s
+      start_period: 10s
       retries: 3
 
 networks:
