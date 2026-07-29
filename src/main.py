@@ -1,11 +1,21 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
+import httpx
 from src.api.v1.gateway import router as gateway_router
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("API Gateway Orchestrator running with HTTPX Connection Pooling...")
+    app.state.http_client = httpx.AsyncClient(timeout=10.0)
+    yield
+    await app.state.http_client.aclose()
 
 app = FastAPI(
     title="KMS Cockpit API Gateway Orchestrator",
     description="Central router orchestrating AAOS inputs, speech processing, and Core RAG lookups.",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # CORS middleware for client connection
