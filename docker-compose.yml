@@ -26,16 +26,17 @@ services:
       - kms-network
     depends_on:
       kms-core-ai:
-        condition: service_started
+        condition: service_healthy
     volumes:
       # Persist rotating logs on the host for easy debugging.
+      # The entrypoint fixes ownership so the non-root app user can write here.
       - ./logs:/app/logs
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
       interval: 30s
       timeout: 5s
-      start_period: 5s
+      start_period: 10s
       retries: 3
 
   kms-core-ai:
@@ -54,7 +55,7 @@ services:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/api/v1/health')"]
       interval: 30s
       timeout: 5s
-      start_period: 5s
+      start_period: 10s
       retries: 3
 
 networks:
