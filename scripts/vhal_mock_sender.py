@@ -30,12 +30,11 @@ if PROJECT_ROOT not in sys.path:
 
 from src.core.logging_config import setup_logging
 
-
 # -----------------------------------------------------------------------------
 # VHAL property IDs used by the AAOS cockpit client.
 # -----------------------------------------------------------------------------
 PERF_VEHICLE_SPEED_ID = "0x11600207"  # VehiclePropertyIds.PERF_VEHICLE_SPEED
-HVAC_AC_ON_ID = "0x15200505"          # VehiclePropertyIds.HVAC_AC_ON
+HVAC_AC_ON_ID = "0x15200505"  # VehiclePropertyIds.HVAC_AC_ON
 AREA_ID_GLOBAL = 0
 
 # Safety threshold observed by the cockpit UI.
@@ -59,11 +58,7 @@ def next_speed(
 
     if pattern == "random":
         new_speed = random.uniform(speed_min, speed_max)
-    elif pattern == "ramp":
-        new_speed = current + speed_step
-        if new_speed > speed_max:
-            new_speed = speed_min
-    elif pattern == "sawtooth":
+    elif pattern == "ramp" or pattern == "sawtooth":
         new_speed = current + speed_step
         if new_speed > speed_max:
             new_speed = speed_min
