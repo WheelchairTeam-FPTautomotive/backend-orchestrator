@@ -91,14 +91,21 @@ def next_hvac(current: bool, pattern: str, step_index: int) -> bool:
 # Payload construction
 # -----------------------------------------------------------------------------
 def build_payload(timestamp_ns: int, speed: float, hvac_on: bool) -> dict[str, Any]:
-    """Build a VHAL event payload matching the cockpit UI contract."""
+    """
+    Build a VHAL event payload matching the cockpit UI contract.
+
+    Note: The vehicle speed is simulated in km/h but must be broadcasted in
+    meters per second (m/s) to comply with standard Android VHAL conventions for
+    the PERF_VEHICLE_SPEED property. Internal logger prints in km/h for readability.
+    """
+    speed_ms = float(speed) / 3.6
     return {
         "timestamp_ns": timestamp_ns,
         "events": [
             {
                 "property_id": PERF_VEHICLE_SPEED_ID,
                 "area_id": AREA_ID_GLOBAL,
-                "value": float(speed),
+                "value": speed_ms,
                 "type": "Float",
             },
             {
