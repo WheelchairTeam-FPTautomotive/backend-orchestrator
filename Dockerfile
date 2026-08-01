@@ -30,11 +30,6 @@ FROM python:3.12-slim AS runtime
 RUN groupadd --gid 1000 appuser && \
     useradd --uid 1000 --gid appuser --create-home --shell /bin/bash appuser
 
-# Install gosu so the entrypoint can drop from root to appuser at runtime.
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends gosu && \
-    rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
 
 # Copy the prepared virtual environment from the builder stage.
@@ -45,20 +40,16 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# Copy application source code.
+# Copy application source code and helper scripts.
 COPY src/ ./src/
-
-# Copy helper scripts (e.g., privilege-dropping entrypoint).
 COPY scripts/ ./scripts/
 
-# Ensure the logs directory exists and is writable by the runtime user.
-RUN mkdir -p /app/logs && \
-    chown -R appuser:appuser /app && \
-    chmod +x /app/scripts/entrypoint.sh
+# Ensure the entrypoint script is executable.
+RUN chmod +x /app/scripts/entrypoint.sh
 
-# The container starts as root so the entrypoint can fix bind-mount ownership,
-# then it drops to appuser before running the application.
-USER root
+# Run as the non-root user. All application logs are emitted to stdout so no
+# local log directory or runtime permission fixes are required.
+USER appuser
 
 # Expose the gateway port.
 EXPOSE 8000
@@ -67,7 +58,7 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')" || exit 1
 
-# Use the entrypoint to drop privileges after fixing runtime permissions.
+# Use the entrypoint to run the application.
 ENTRYPOINT ["/app/scripts/entrypoint.sh"]
 
 # Run the FastAPI gateway via the Python module runner to avoid the shebang

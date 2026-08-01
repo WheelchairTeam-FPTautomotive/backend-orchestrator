@@ -1,11 +1,9 @@
 #!/bin/bash
 set -e
 
-# Runtime permission fix for bind-mounted host directories.
-# The container starts as root briefly so it can ensure the non-root
-# app user owns the log directory, then it drops privileges and runs
-# the application process.
+# No runtime filesystem permission fixes are required.
+# The container runs as a non-root user and emits all logs to stdout,
+# so there is no local log directory to chown. Any remaining arguments
+# are passed directly to the application process.
 
-chown -R appuser:appuser /app/logs
-
-exec gosu appuser "$@"
+exec "$@"

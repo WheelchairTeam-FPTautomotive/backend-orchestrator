@@ -1,21 +1,13 @@
 """
 Logging subsystem for the backend orchestrator.
 
-Initialises a rotating file handler plus a stdout stream handler so that
-application logs are both human-readable in the console and durably persisted
-on disk with automatic size-based rotation.
+Configures a single stdout stream handler so that application logs are captured
+natively by AWS CloudWatch Logs without requiring any local filesystem access.
 """
 
 import logging
 import os
 import sys
-from logging.handlers import RotatingFileHandler
-
-
-DEFAULT_LOG_DIR = "logs"
-DEFAULT_LOG_FILE = "orchestrator.log"
-DEFAULT_MAX_BYTES = 10 * 1024 * 1024  # 10 MB per file
-DEFAULT_BACKUP_COUNT = 5
 
 
 def get_log_level(level_name: str | None) -> int:
@@ -25,20 +17,13 @@ def get_log_level(level_name: str | None) -> int:
     return getattr(logging, level_name.upper(), logging.INFO)
 
 
-def setup_logging(
-    name: str = "kms_orchestrator",
-    log_dir: str | None = None,
-    log_file: str | None = None,
-    max_bytes: int = DEFAULT_MAX_BYTES,
-    backup_count: int = DEFAULT_BACKUP_COUNT,
-) -> logging.Logger:
+def setup_logging(name: str = "kms_orchestrator") -> logging.Logger:
     """
     Configure the application logger.
 
-    Returns a logger with two handlers:
-      1. A console handler writing to stdout.
-      2. A rotating file handler that splits files at `max_bytes` and keeps
-         `backup_count` historical files to prevent unbounded disk growth.
+    Returns a logger that writes exclusively to stdout. This avoids any
+    dependency on a writable local filesystem, which is essential for
+    Fargate tasks with read-only root filesystems.
     """
     logger = logging.getLogger(name)
     logger.setLevel(get_log_level(os.getenv("LOG_LEVEL")))
@@ -52,26 +37,9 @@ def setup_logging(
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    # stdout / stderr capture
     stream_handler = logging.StreamHandler(sys.stdout)
     stream_handler.setFormatter(formatter)
     logger.addHandler(stream_handler)
 
-    # Rotating file handler
-    target_dir = log_dir or os.getenv("LOG_DIR", DEFAULT_LOG_DIR)
-    os.makedirs(target_dir, exist_ok=True)
-
-    target_file = log_file or DEFAULT_LOG_FILE
-    file_path = os.path.join(target_dir, target_file)
-
-    file_handler = RotatingFileHandler(
-        filename=file_path,
-        maxBytes=max_bytes,
-        backupCount=backup_count,
-        encoding="utf-8",
-    )
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
-
-    logger.info("Logging initialised: console + rotating file (%s)", file_path)
+    logger.info("Logging initialised: stdout only")
     return logger

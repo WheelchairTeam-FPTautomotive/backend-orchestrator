@@ -3,6 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import httpx
 from src.api.v1.gateway import router as gateway_router
+from src.core.logging_config import setup_logging
+
+# Configure application logging to stdout for CloudWatch compatibility.
+logger = setup_logging()
 
 
 @asynccontextmanager
@@ -35,4 +39,4 @@ app.include_router(gateway_router)
 
 @app.on_event("startup")
 async def startup_event():
-    print("API Gateway Orchestrator running on port 8000...")
+    logger.info("API Gateway Orchestrator running on port 8000...")
