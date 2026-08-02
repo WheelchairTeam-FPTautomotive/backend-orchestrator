@@ -1,0 +1,85 @@
+---
+# Deploy a new ECS task definition revision and update the ECS service.
+
+- name: Construct IAM role ARNs from account ID and role names
+  ansible.builtin.set_fact:
+    task_execution_role_arn: "arn:aws:iam::{{ aws_account_id }}:role/{{ existing_task_execution_role_name }}"
+    task_role_arn: "arn:aws:iam::{{ aws_account_id }}:role/{{ existing_task_role_name }}"
+
+# Allow the info lookup to fail gracefully (e.g., first deployment or missing
+# permissions). The next task handles the absence of service data.
+- name: Retrieve current ECS service details
+  community.aws.ecs_service_info:
+    cluster: "{{ ecs_cluster_name }}"
+    service: "{{ ecs_service_name }}"
+    region: "{{ aws_region }}"
+    details: true
+  register: current_service_info
+  failed_when: false
+
+- name: Record previous active task definition ARN
+  ansible.builtin.set_fact:
+    previous_task_definition_arn: >-
+      {{
+        (
+          current_service_info.services is defined
+          and current_service_info.services | length > 0
+          and current_service_info.services[0] is mapping
+          and 'taskDefinition' in current_service_info.services[0]
+        ) | ternary(current_service_info.services[0].taskDefinition, 'FIRST_DEPLOYMENT')
+      }}
+
+- name: DEBUG - Show previous task definition ARN
+  ansible.builtin.debug:
+    msg: "Previous active task definition ARN: {{ previous_task_definition_arn }}"
+
+- name: Register new ECS task definition with updated image and secrets
+  community.aws.ecs_taskdefinition:
+    family: "{{ ecs_task_family }}"
+    network_mode: "{{ network_mode }}"
+    launch_type: FARGATE
+    cpu: "{{ container_cpu }}"
+    memory: "{{ container_memory }}"
+    execution_role_arn: "{{ task_execution_role_arn }}"
+    task_role_arn: "{{ task_role_arn }}"
+    containers: "{{ lookup('template', 'task_definition.json.j2') }}"
+    force_create: true
+    region: "{{ aws_region }}"
+    state: present
+  register: new_task_definition
+  no_log: false
+
+- name: Record new task definition ARN
+  ansible.builtin.set_fact:
+    new_task_definition_arn: "{{ new_task_definition.taskdefinition.taskDefinitionArn }}"
+    active_task_definition_arn: "{{ new_task_definition.taskdefinition.taskDefinitionArn }}"
+
+- name: Update ECS service to use new task definition
+  community.aws.ecs_service:
+    cluster: "{{ ecs_cluster_name }}"
+    name: "{{ ecs_service_name }}"
+    state: present
+    task_definition: "{{ new_task_definition_arn }}"
+    force_new_deployment: true
+    region: "{{ aws_region }}"
+    wait: true
+
+- name: Wait for ECS service to stabilize on new task definition
+  community.aws.ecs_service_info:
+    cluster: "{{ ecs_cluster_name }}"
+    service: "{{ ecs_service_name }}"
+    region: "{{ aws_region }}"
+    details: true
+  register: service_deployment_status
+  vars:
+    primary_deployment: "{{ (service_deployment_status.services | default([{}]) | first).deployments | default([]) | selectattr('status', 'equalto', 'PRIMARY') | first | default({}) }}"
+    active_deployment: "{{ (service_deployment_status.services | default([{}]) | first).deployments | default([]) | selectattr('status', 'equalto', 'ACTIVE') | first | default({}) }}"
+  until: >-
+    primary_deployment is defined
+    and primary_deployment | length > 0
+    and primary_deployment.taskDefinition | default('') == new_task_definition_arn
+    and primary_deployment.runningCount | default(0) | int == primary_deployment.desiredCount | default(0) | int
+    and primary_deployment.pendingCount | default(1) | int == 0
+    and active_deployment.runningCount | default(0) | int == 0
+  retries: "{{ service_stabilization_retries }}"
+  delay: "{{ service_stabilization_delay }}"

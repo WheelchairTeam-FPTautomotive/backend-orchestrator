@@ -22,3 +22,13 @@ output "ecs_service_name" {
   description = "Name of the ECS Fargate service"
   value       = module.ecs_service.name
 }
+
+output "openai_api_key_secret_arn" {
+  description = "ARN of the OpenAI API key secret in Secrets Manager"
+  value       = aws_secretsmanager_secret.openai_api_key.arn
+}
+
+output "ecs_log_group_name" {
+  description = "CloudWatch log group for the ECS Fargate service task definition"
+  value       = aws_cloudwatch_log_group.ecs_service.name
+}

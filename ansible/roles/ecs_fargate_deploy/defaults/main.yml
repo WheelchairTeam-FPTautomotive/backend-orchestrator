@@ -1,0 +1,48 @@
+---
+# Safe defaults for the ecs_fargate_deploy role.
+# Override these via inventory variables, group_vars, or command-line extra-vars.
+
+# ECS identifiers
+ecs_cluster_name: backend-orchestrator-dev-cluster
+ecs_service_name: backend-orchestrator-dev-service
+ecs_task_family: backend-orchestrator-dev-service
+
+# Container configuration
+container_name: backend-orchestrator
+container_port: 8000
+container_cpu: 256
+container_memory: 512
+image_tag: latest
+
+# AWS network / launch type
+network_mode: awsvpc
+requires_compatibilities:
+  - FARGATE
+
+# Pre-existing IAM role names supplied by the hackathon environment.
+# The role ARNs are constructed automatically as
+# arn:aws:iam::<account_id>:role/<role_name>.
+aws_account_id: "REDACTED_ACCOUNT_ID"
+existing_task_execution_role_name: ecsTaskExecutionRole
+existing_task_role_name: TeamRole
+
+# Secrets Manager ARN for the OpenAI API key.
+# The playbook reads this from the Terraform output
+# openai_api_key_secret_arn and passes it into the role.
+openai_api_key_secret_arn: ""
+
+# Secrets Manager ARNs exposed as container environment variables.
+# Constructed by the playbook from Terraform outputs.
+ecs_app_secret_arns: {}
+
+# CloudWatch log group name for the ECS Fargate task definition.
+ecs_log_group_name: ""
+
+# Health check configuration
+health_check_path: /api/v1/health
+health_check_retries: 15
+health_check_delay: 5
+
+# Service stabilization polling configuration
+service_stabilization_retries: 20
+service_stabilization_delay: 5

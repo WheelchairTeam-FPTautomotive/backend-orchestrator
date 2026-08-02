@@ -1,0 +1,18 @@
+---
+# Plain (non-secret) deployment variables.
+# These values are safe to keep unencrypted in version control.
+
+# AWS region where the ECS infrastructure was provisioned by Terraform.
+aws_region: ap-southeast-2
+
+# Path to the Terraform workspace relative to the playbook.
+terraform_dir: "{{ playbook_dir }}/../../terraform"
+
+# Health check settings for the deployed service.
+health_check_path: /api/v1/health
+health_check_retries: 15
+health_check_delay: 5
+
+# Service stabilization polling settings.
+service_stabilization_retries: 20
+service_stabilization_delay: 5

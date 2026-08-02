@@ -1,0 +1,79 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  TERRAFORM_DIR: ./terraform
+  ANSIBLE_DIR: ./ansible
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: backend-orchestrator
+          IMAGE_TAG: latest
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.5.7"
+
+      # NOTE: This project uses a local Terraform backend by default. In CI,
+      # the runner is ephemeral, so the local state file will not persist across
+      # runs. For production CI/CD, migrate the backend to S3 (e.g., add a
+      # backend "s3" block in terraform/backend.tf and set the bucket/key in
+      # GitHub secrets). The workflow is otherwise ready to apply the
+      # infrastructure and run the Ansible deployment.
+      - name: Terraform Init
+        working-directory: ${{ env.TERRAFORM_DIR }}
+        run: terraform init
+
+      - name: Terraform Apply
+        working-directory: ${{ env.TERRAFORM_DIR }}
+        run: terraform apply -auto-approve -input=false
+
+      - name: Setup Python and Ansible
+        run: |
+          pip install ansible boto3 botocore
+          ansible-galaxy collection install community.aws amazon.aws
+
+      - name: Write Ansible Vault password
+        run: |
+          printf '%s' '${{ secrets.ANSIBLE_VAULT_PASSWORD }}' > /tmp/vault-pass
+          chmod 600 /tmp/vault-pass
+
+      - name: Deploy to ECS via Ansible
+        working-directory: ${{ env.ANSIBLE_DIR }}
+        env:
+          ANSIBLE_VAULT_PASSWORD_FILE: /tmp/vault-pass
+        run: |
+          ansible-playbook -i inventory/localhost.yml playbooks/deploy.yml
+
+      - name: Cleanup Vault password
+        if: always()
+        run: rm -f /tmp/vault-pass

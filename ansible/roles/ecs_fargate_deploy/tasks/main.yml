@@ -1,0 +1,33 @@
+---
+# Main orchestration task file.
+# It wraps the deployment + health check in a block so a rescue task can roll
+# the ECS service back to the previous task definition revision on failure.
+
+- name: Execute deployment with automatic rollback on health-check failure
+  block:
+    - name: Deploy new task definition and update ECS service
+      ansible.builtin.include_tasks: deploy.yml
+
+    - name: Verify service health via ALB endpoint
+      ansible.builtin.include_tasks: health_check.yml
+
+  rescue:
+    - name: Roll back to previous task definition revision
+      ansible.builtin.include_tasks: rollback.yml
+
+    - name: Fail the play after rollback
+      ansible.builtin.fail:
+        msg: |
+          Deployment failed and was rolled back to the previous task definition.
+          Previous revision: {{ previous_task_definition_arn | default('unknown') }}
+          Failed revision:   {{ new_task_definition_arn | default('unknown') }}
+
+  always:
+    - name: Report deployment summary
+      ansible.builtin.debug:
+        msg: |
+          Deployment summary:
+            Previous task definition : {{ previous_task_definition_arn | default('unknown') }}
+            New task definition      : {{ new_task_definition_arn | default('unknown') }}
+            Active task definition   : {{ active_task_definition_arn | default('unknown') }}
+            Health check status      : {{ health_check_status | default('not run') }}
