@@ -1,9 +1,9 @@
 import os
 import time
-import asyncio
 import edge_tts
 from groq import AsyncGroq
 from dotenv import load_dotenv
+import sys
 
 # Load environment variables
 load_dotenv()
@@ -89,7 +89,7 @@ if __name__ == "__main__":
 
     # 1. Test Vietnamese TTS
     input_text = "Bật điều hòa 22 độ C"
-    print(f"\n--- 1. Testing edge-tts (TTS) ---")
+    print("\n--- 1. Testing edge-tts (TTS) ---")
     print(f"Synthesizing text: '{input_text}'...")
     audio_bytes, tts_ms = synthesize_speech_bytes(input_text)
 
@@ -102,11 +102,11 @@ if __name__ == "__main__":
             f.write(audio_bytes)
         print(f"📁 Saved audio file locally as '{output_filename}'")
     else:
-        print(f"❌ TTS Failed!")
-        exit(1)
+        print("❌ TTS Failed!")
+        sys.exit(1)
 
     # 2. Test Groq STT using the generated audio
-    print(f"\n--- 2. Testing Groq Cloud Whisper (STT) ---")
+    print("\n--- 2. Testing Groq Cloud Whisper (STT) ---")
     print("Sending audio bytes directly to Groq LPU...")
     transcribed_text, stt_ms = transcribe_audio_bytes(audio_bytes, filename="test.mp3")
 
@@ -115,6 +115,6 @@ if __name__ == "__main__":
         print(f"   Original Text:    '{input_text}'")
         print(f"   Transcribed Text: '{transcribed_text}'")
     else:
-        print(f"❌ Transcribe Failed! Check your GROQ_API_KEY in .env")
+        print("❌ Transcribe Failed! Check your GROQ_API_KEY in .env")
 
     print("\n==================================================")

@@ -28,3 +28,5 @@ dev = [
 [tool.ruff.lint.per-file-ignores]
 # Ignore legacy/template patterns in source and script code
 "**/*.py" = ["BLE001", "B008", "I001", "TRY401", "ASYNC230"]
+# Legacy AWS voice prototype kept for reference; exclude from CI lint gate
+"src/services/aws_voice(oldIssues).py" = ["S110", "F541", "PLR1722", "BLE001"]

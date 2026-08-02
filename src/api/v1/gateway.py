@@ -1,12 +1,8 @@
-from aiohttp.typedefs import Query
-from groq.resources import audio
 import time
 from fastapi import APIRouter, HTTPException, UploadFile, File, Request
 from pydantic import BaseModel, Field
-from typing import List
 import httpx
 import os
-import shutil
 import logging
 from services.voice_utils import transcribe_audio_bytes, synthesize_speech_bytes
 import base64
@@ -89,19 +85,22 @@ async def route_text_query(payload: QueryRequest, request: Request):
             status=data.get("status", "success"),
         )
 
+    # --- START MODIFICATION ---
+    # CI fix: use logger.exception for G201 (ruff)
     except httpx.TimeoutException as e:
-        logger.error(f"[Gateway] Timeout connecting to Core AI: {e}", exc_info=True)
+        logger.exception(f"[Gateway] Timeout connecting to Core AI: {e}")
         raise HTTPException(
             status_code=504,
             detail="Gateway Timeout: KMS Core AI service took too long to respond.",
         )
 
     except httpx.RequestError as e:
-        logger.error(f"[Gateway] Request failed connecting to Core AI: {e}", exc_info=True)
+        logger.exception(f"[Gateway] Request failed connecting to Core AI: {e}")
         raise HTTPException(
             status_code=502,
             detail="Bad Gateway: KMS Core AI service is currently unreachable.",
         )
+    # --- END MODIFICATION ---
 
 
 @router.post("/copilot/voice-query", response_model=VoiceQueryResponse)
@@ -155,19 +154,22 @@ async def route_voice_query(file: UploadFile, request: Request):
             ),
         )
 
+    # --- START MODIFICATION ---
+    # CI fix: use logger.exception for G201 (ruff)
     except httpx.TimeoutException as e:
-        logger.error(f"[Gateway] Voice flow timeout: {e}", exc_info=True)
+        logger.exception(f"[Gateway] Voice flow timeout: {e}")
         raise HTTPException(
             status_code=504,
             detail="Gateway Timeout: KMS Core AI service took too long to respond.",
         )
 
     except httpx.RequestError as e:
-        logger.error(f"[Gateway] Voice flow connection error: {e}", exc_info=True)
+        logger.exception(f"[Gateway] Voice flow connection error: {e}")
         raise HTTPException(
             status_code=502,
             detail="Bad Gateway: KMS Core AI service is currently unreachable.",
         )
+    # --- END MODIFICATION ---
     
 
     

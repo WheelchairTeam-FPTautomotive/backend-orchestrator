@@ -6,6 +6,7 @@ import requests
 from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 from dotenv import load_dotenv
+import sys
 
 # Load environment variables from .env
 load_dotenv()
@@ -155,7 +156,7 @@ if __name__ == "__main__":
 
     # Step 1: Test Polly TTS
     input_text = "Bật điều hòa 22 độ C"
-    print(f"\n--- 1. Testing Amazon Polly (TTS) ---")
+    print("\n--- 1. Testing Amazon Polly (TTS) ---")
     print(f"Synthesizing text: '{input_text}'...")
     audio_bytes, tts_ms = synthesize_speech(input_text)
 
@@ -167,11 +168,11 @@ if __name__ == "__main__":
             f.write(audio_bytes)
         print("📁 Saved generated audio to 'output_test.mp3'")
     else:
-        print(f"❌ Polly Failed!")
-        exit(1)
+        print("❌ Polly Failed!")
+        sys.exit(1)
 
     # Step 2: Test Transcribe STT using the generated audio
-    print(f"\n--- 2. Testing Amazon Transcribe (STT) ---")
+    print("\n--- 2. Testing Amazon Transcribe (STT) ---")
     print("Uploading generated audio to S3 and running transcription job...")
     transcribed_text, stt_ms = transcribe_audio_file(audio_bytes, file_format="mp3")
 
@@ -180,6 +181,6 @@ if __name__ == "__main__":
         print(f"   Original Text:    '{input_text}'")
         print(f"   Transcribed Text: '{transcribed_text}'")
     else:
-        print(f"❌ Transcribe Failed! (Make sure AWS_S3_BUCKET_NAME in .env exists in your S3 console)")
+        print("❌ Transcribe Failed! (Make sure AWS_S3_BUCKET_NAME in .env exists in your S3 console)")
 
     print("\n==================================================")
