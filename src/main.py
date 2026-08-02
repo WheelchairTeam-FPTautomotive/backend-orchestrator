@@ -2,8 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import httpx
-from src.api.v1.gateway import router as gateway_router
-from src.core.logging_config import setup_logging
+from api.v1.gateway import router as gateway_router
+from core.logging_config import setup_logging
 
 # Configure application logging to stdout for CloudWatch compatibility.
 logger = setup_logging()
