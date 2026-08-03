@@ -188,6 +188,12 @@ resource "aws_cloudwatch_log_group" "ecs" {
   tags              = local.common_tags
 }
 
+resource "aws_cloudwatch_log_group" "ecs_service" {
+  name              = "/ecs/${local.short_name}-service"
+  retention_in_days = 7
+  tags              = local.common_tags
+}
+
 resource "aws_secretsmanager_secret" "openai_api_key" {
   name                    = "${local.short_name}-openai-api-key"
   description             = "OpenAI API key for the backend orchestrator"

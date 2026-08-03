@@ -1,0 +1,80 @@
+---
+# Entry-point playbook: deploy the backend-orchestrator container to ECS Fargate.
+- name: Deploy backend-orchestrator to ECS Fargate
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Load Terraform outputs as JSON
+      ansible.builtin.command:
+        cmd: terraform.exe output -json
+        chdir: "{{ terraform_dir }}"
+      register: terraform_outputs_raw
+      changed_when: false
+
+    - name: Parse Terraform outputs
+      ansible.builtin.set_fact:
+        terraform_outputs: "{{ terraform_outputs_raw.stdout | from_json }}"
+
+    - name: Set infrastructure facts from Terraform outputs
+      ansible.builtin.set_fact:
+        alb_dns_name: "{{ terraform_outputs.alb_dns_name.value }}"
+        ecr_repository_url: "{{ terraform_outputs.ecr_repository_url.value }}"
+        ecs_cluster_name: "{{ terraform_outputs.ecs_cluster_name.value }}"
+        ecs_service_name: "{{ terraform_outputs.ecs_service_name.value }}"
+        openai_api_key_secret_arn: "{{ terraform_outputs.openai_api_key_secret_arn.value }}"
+        ecs_log_group_name: "{{ terraform_outputs.ecs_log_group_name.value }}"
+        ecs_app_secret_arns:
+          OPENAI_API_KEY: "{{ terraform_outputs.openai_api_key_secret_arn.value }}"
+
+    - name: Validate OpenAI secret ARN from Terraform output
+      ansible.builtin.fail:
+        msg: |
+          The Terraform output 'openai_api_key_secret_arn' is missing, empty, or still contains the dummy '-AbCdEf' placeholder.
+          Please run 'terraform apply' in the Terraform workspace and verify the vault file does not override this variable.
+      when: >
+        openai_api_key_secret_arn is not defined
+        or openai_api_key_secret_arn | length == 0
+        or 'AbCdEf' in openai_api_key_secret_arn
+        or ecs_app_secret_arns.OPENAI_API_KEY is not defined
+        or ecs_app_secret_arns.OPENAI_API_KEY | length == 0
+        or 'AbCdEf' in ecs_app_secret_arns.OPENAI_API_KEY
+
+    - name: DEBUG - Show resolved OpenAI secret ARN
+      ansible.builtin.debug:
+        msg: "Resolved OpenAI secret ARN: {{ openai_api_key_secret_arn }}"
+
+    - name: Run ECS Fargate deployment role
+      ansible.builtin.include_role:
+        name: ecs_fargate_deploy
+      vars:
+        alb_dns_name: "{{ terraform_outputs.alb_dns_name.value }}"
+        ecr_repository_url: "{{ terraform_outputs.ecr_repository_url.value }}"
+        ecs_cluster_name: "{{ terraform_outputs.ecs_cluster_name.value }}"
+        ecs_service_name: "{{ terraform_outputs.ecs_service_name.value }}"
+        openai_api_key_secret_arn: "{{ terraform_outputs.openai_api_key_secret_arn.value }}"
+        ecs_log_group_name: "{{ terraform_outputs.ecs_log_group_name.value }}"
+        ecs_app_secret_arns:
+          OPENAI_API_KEY: "{{ terraform_outputs.openai_api_key_secret_arn.value }}"
+
+    - name: Retrieve current ECS service details
+      community.aws.ecs_service_info:
+        cluster: "{{ ecs_cluster_name }}"
+        service: "{{ ecs_service_name }}"
+        region: "{{ aws_region }}"
+        details: true
+      register: current_service_info
+
+    - name: DEBUG - Show ECS service info payload
+      ansible.builtin.debug:
+        var: current_service_info.services
+
+    - name: Record previous active task definition ARN (Safe Fallback)
+      ansible.builtin.set_fact:
+        previous_task_definition_arn: >-
+          {% if current_service_info.services | length > 0 and current_service_info.services[0] is mapping %}
+            {{ current_service_info.services[0].get('taskDefinition', current_service_info.services[0].get('task_definition', 'FIRST_DEPLOYMENT')) }}
+          {% else %}
+            FIRST_DEPLOYMENT
+          {% endif %}

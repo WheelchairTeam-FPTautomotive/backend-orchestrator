@@ -1,0 +1,22 @@
+---
+# Poll the ALB health endpoint until it returns HTTP 200 or the retry limit is
+# reached. Failure here triggers the rescue/rollback path in tasks/main.yml.
+
+- name: Poll ALB health endpoint
+  ansible.builtin.uri:
+    url: "http://{{ alb_dns_name }}{{ health_check_path }}"
+    method: GET
+    status_code: 200
+    timeout: 10
+  register: health_check_result
+  until: health_check_result.status == 200
+  retries: "{{ health_check_retries }}"
+  delay: "{{ health_check_delay }}"
+
+- name: Show health check result
+  ansible.builtin.debug:
+    var: health_check_result
+
+- name: Record successful health check status
+  ansible.builtin.set_fact:
+    health_check_status: "passed (HTTP {{ health_check_result.status }})"

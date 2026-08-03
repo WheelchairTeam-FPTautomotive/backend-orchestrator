@@ -1,0 +1,38 @@
+---
+# Roll the ECS service back to the previous task definition revision and wait
+# for the rollback to stabilize.
+
+- name: Roll back ECS service to previous task definition
+  community.aws.ecs_service:
+    cluster: "{{ ecs_cluster_name }}"
+    name: "{{ ecs_service_name }}"
+    state: present
+    task_definition: "{{ previous_task_definition_arn }}"
+    force_new_deployment: true
+    region: "{{ aws_region }}"
+    wait: true
+  register: rollback_result
+  when: previous_task_definition_arn | default('FIRST_DEPLOYMENT') != 'FIRST_DEPLOYMENT'
+
+- name: Poll ALB health endpoint after rollback
+  ansible.builtin.uri:
+    url: "http://{{ alb_dns_name }}{{ health_check_path }}"
+    method: GET
+    status_code: 200
+    timeout: 10
+  register: rollback_health_check_result
+  until: rollback_health_check_result.status == 200
+  retries: "{{ health_check_retries }}"
+  delay: "{{ health_check_delay }}"
+  when: previous_task_definition_arn | default('FIRST_DEPLOYMENT') != 'FIRST_DEPLOYMENT'
+
+- name: Record active task definition and health status after rollback
+  ansible.builtin.set_fact:
+    active_task_definition_arn: "{{ previous_task_definition_arn }}"
+    health_check_status: "failed; rolled back to {{ previous_task_definition_arn }}"
+  when: previous_task_definition_arn | default('FIRST_DEPLOYMENT') != 'FIRST_DEPLOYMENT'
+
+- name: Report that rollback was skipped on first deployment
+  ansible.builtin.debug:
+    msg: "No previous task definition exists (FIRST_DEPLOYMENT). Skipping rollback."
+  when: previous_task_definition_arn | default('FIRST_DEPLOYMENT') == 'FIRST_DEPLOYMENT'
