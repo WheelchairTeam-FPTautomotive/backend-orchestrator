@@ -1,3 +1,5 @@
+from typing import Literal
+
 import time
 from fastapi import APIRouter, HTTPException, UploadFile, File, Request
 from pydantic import BaseModel, Field
@@ -5,6 +7,7 @@ import httpx
 import os
 import logging
 from services.voice_utils import transcribe_audio_bytes, synthesize_speech_bytes
+from services.intent_router import classify_intent_fast
 import base64
 
 logger = logging.getLogger("backend.orchestrator.gateway")
@@ -13,6 +16,36 @@ router = APIRouter(prefix="/api/v1")
 
 # Core AI URL definition (KMS RAG Engine runs on port 8001)
 CORE_AI_URL = os.getenv("CORE_AI_URL", "http://localhost:8001/api/v1/search")
+
+
+def _core_ai_mode_for_intent(intent: str) -> str:
+    # --- START MODIFICATION ---
+    # FREE_TALK → no RAG; everything else uses rag + distance gate
+    if intent == "FREE_TALK":
+        return "free_talk"
+    return "rag"
+    # --- END MODIFICATION ---
+
+
+def _car_control_response(query: str, language: str = "vi") -> dict:
+    # --- START MODIFICATION ---
+    if language == "en":
+        answer = (
+            "Vehicle control request noted, but hardware control is not available "
+            "in this build."
+        )
+    else:
+        answer = (
+            "Yêu cầu điều khiển xe đã được ghi nhận, nhưng chức năng điều khiển phần cứng "
+            "chưa khả dụng trong bản build này."
+        )
+    return {
+        "query": query,
+        "answer": answer,
+        "citations": [],
+        "status": "success",
+    }
+    # --- END MODIFICATION ---
 
 
 # ==========================================
@@ -25,6 +58,10 @@ class QueryRequest(BaseModel):
         max_length=2000,
         description="Search query string for RAG",
         examples=["Làm thế nào để kích hoạt phanh khẩn cấp ADAS?"],
+    )
+    language: Literal["vi", "en"] = Field(
+        default="vi",
+        description="UI locale — answer language follows this, not the query language",
     )
 
 class CitationPayload(BaseModel):
@@ -39,6 +76,26 @@ class QueryResponse(BaseModel):
     answer: str
     citations: list[CitationPayload] = []
     status: str = "success"
+
+
+def _timeout_soft_response(query: str, language: str = "vi") -> QueryResponse:
+    # --- START MODIFICATION ---
+    if language == "en":
+        answer = (
+            "Sorry, the assistant is still warming up. Please ask again in a few seconds."
+        )
+    else:
+        answer = (
+            "Xin lỗi, trợ lý đang khởi động chậm. Vui lòng hỏi lại sau vài giây."
+        )
+    return QueryResponse(
+        query=query,
+        answer=answer,
+        citations=[],
+        status="success",
+    )
+    # --- END MODIFICATION ---
+
 
 class LatencyMetrics(BaseModel):
     stt_ms: int = 0
@@ -63,11 +120,33 @@ async def gateway_health():
 
 @router.post("/copilot/query", response_model=QueryResponse)
 async def route_text_query(payload: QueryRequest, request: Request):
-    logger.info(f"[Gateway] Forwarding text query to Core AI: '{payload.query}'")
+    intent, intent_ms = classify_intent_fast(payload.query)
+    mode = _core_ai_mode_for_intent(intent)
+    language = payload.language or "vi"
+    logger.info(
+        f"[Gateway] intent={intent} ({intent_ms}ms) mode={mode} "
+        f"language={language} query='{payload.query}'"
+    )
+
+    if intent == "CAR_CONTROL":
+        data = _car_control_response(payload.query, language=language)
+        return QueryResponse(
+            query=data["query"],
+            answer=data["answer"],
+            citations=data["citations"],
+            status=data["status"],
+        )
+
     try:
         client: httpx.AsyncClient = request.app.state.http_client
-        # Forward the text search query to the KMS Core AI microservice using shared connection pool
-        response = await client.post(CORE_AI_URL, json={"query": payload.query})
+        response = await client.post(
+            CORE_AI_URL,
+            json={
+                "query": payload.query,
+                "mode": mode,
+                "language": language,
+            },
+        )
         if response.status_code != 200:
             logger.error(
                 f"[Gateway] Core AI upstream error: status={response.status_code}, body={response.text}"
@@ -86,13 +165,10 @@ async def route_text_query(payload: QueryRequest, request: Request):
         )
 
     # --- START MODIFICATION ---
-    # CI fix: use logger.exception for G201 (ruff)
+    # Soft timeout: demosafe 200 instead of raw 504
     except httpx.TimeoutException as e:
         logger.exception(f"[Gateway] Timeout connecting to Core AI: {e}")
-        raise HTTPException(
-            status_code=504,
-            detail="Gateway Timeout: KMS Core AI service took too long to respond.",
-        )
+        return _timeout_soft_response(payload.query, language=language)
 
     except httpx.RequestError as e:
         logger.exception(f"[Gateway] Request failed connecting to Core AI: {e}")
@@ -121,20 +197,31 @@ async def route_voice_query(file: UploadFile, request: Request):
         )
     
     core_ai_start = time.perf_counter()
+    intent, intent_ms = classify_intent_fast(transcript)
+    mode = _core_ai_mode_for_intent(intent)
+    language = "vi"
+    logger.info(
+        f"[Gateway] voice intent={intent} ({intent_ms}ms) mode={mode} transcript='{transcript}'"
+    )
 
     try:
-        client: httpx.AsyncClient = request.app.state.http_client
-        response = await client.post(CORE_AI_URL, json={"query": transcript})
-        if response.status_code != 200:
-            logger.error(
-                f"[Gateway] Core AI upstream error in voice flow: status={response.status_code}"
+        if intent == "CAR_CONTROL":
+            data = _car_control_response(transcript, language=language)
+        else:
+            client: httpx.AsyncClient = request.app.state.http_client
+            response = await client.post(
+                CORE_AI_URL,
+                json={"query": transcript, "mode": mode, "language": language},
             )
-            raise HTTPException(
-                status_code=500,
-                detail="Core AI failed executing search."
-            )
-
-        data = response.json()
+            if response.status_code != 200:
+                logger.error(
+                    f"[Gateway] Core AI upstream error in voice flow: status={response.status_code}"
+                )
+                raise HTTPException(
+                    status_code=500,
+                    detail="Core AI failed executing search."
+                )
+            data = response.json()
 
         core_ai_ms = int((time.perf_counter() - core_ai_start) * 1000)
         audio_bytes, tts_ms = await synthesize_speech_bytes(data.get("answer", ""))
@@ -154,13 +241,20 @@ async def route_voice_query(file: UploadFile, request: Request):
             ),
         )
 
-    # --- START MODIFICATION ---
-    # CI fix: use logger.exception for G201 (ruff)
     except httpx.TimeoutException as e:
         logger.exception(f"[Gateway] Voice flow timeout: {e}")
-        raise HTTPException(
-            status_code=504,
-            detail="Gateway Timeout: KMS Core AI service took too long to respond.",
+        soft = _timeout_soft_response(transcript, language=language)
+        return VoiceQueryResponse(
+            transcript=transcript,
+            answer=soft.answer,
+            audio_base64=None,
+            citations=[],
+            latency=LatencyMetrics(
+                stt_ms=stt_ms,
+                core_ai_ms=0,
+                tts_ms=0,
+                total_ms=int((time.perf_counter() - total_start) * 1000),
+            ),
         )
 
     except httpx.RequestError as e:
@@ -169,7 +263,6 @@ async def route_voice_query(file: UploadFile, request: Request):
             status_code=502,
             detail="Bad Gateway: KMS Core AI service is currently unreachable.",
         )
-    # --- END MODIFICATION ---
     
 
     

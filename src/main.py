@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import httpx
+import os
 from api.v1.gateway import router as gateway_router
 from core.logging_config import setup_logging
 
@@ -12,7 +13,8 @@ logger = setup_logging()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("API Gateway Orchestrator running with HTTPX Connection Pooling...")
-    app.state.http_client = httpx.AsyncClient(timeout=10.0)
+    timeout_s = float(os.getenv("CORE_AI_TIMEOUT_S", "120"))
+    app.state.http_client = httpx.AsyncClient(timeout=timeout_s)
     yield
     await app.state.http_client.aclose()
 
