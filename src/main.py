@@ -12,7 +12,7 @@ logger = setup_logging()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("API Gateway Orchestrator running with HTTPX Connection Pooling...")
-    app.state.http_client = httpx.AsyncClient(timeout=10.0)
+    app.state.http_client = httpx.AsyncClient(timeout=60.0)
     yield
     await app.state.http_client.aclose()
 

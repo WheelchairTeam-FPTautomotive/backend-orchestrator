@@ -145,10 +145,11 @@ CMD ["python", "-m", "uvicorn", "main:app", "--app-dir", "src", "--host", "0.0.0
 
 Both services expose a health endpoint that Docker probes every 30 seconds:
 
-| Service | Port | Health endpoint |
-|---------|------|-----------------|
+
+| Service                | Port   | Health endpoint      |
+| ------------------------ | -------- | ---------------------- |
 | `backend-orchestrator` | `8000` | `GET /api/v1/health` |
-| `kms-core-ai` | `8001` | `GET /api/v1/health` |
+| `kms-core-ai`          | `8001` | `GET /api/v1/health` |
 
 The probe is implemented as a non-privileged inline Python HTTP request:
 
@@ -261,19 +262,20 @@ python scripts/vhal_mock_sender.py --speed-pattern sawtooth --hvac-pattern toggl
 
 ### Common CLI options
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--interval` | `1.0` | Seconds between broadcast ticks |
-| `--speed-start` | `60.0` | Initial speed in km/h |
-| `--speed-min` | `0.0` | Minimum speed in km/h |
-| `--speed-max` | `120.0` | Maximum speed in km/h |
-| `--speed-step` | `2.5` | Speed increment per tick |
-| `--speed-pattern` | `sawtooth` | `sawtooth`, `ramp`, `random`, or `constant` |
-| `--hvac-start` | `off` | Initial HVAC state: `on` or `off` |
-| `--hvac-pattern` | `toggle` | `toggle`, `random`, `constant-on`, or `constant-off` |
-| `--duration` | `0` | Total seconds to run; `0` = infinite |
-| `--output-format` | `json` | `json` (pretty) or `line` (compact) |
-| `--log-dir` | `logs` | Directory for rotating `vhal_mock_sender.log` |
+
+| Option            | Default    | Description                                          |
+| ------------------- | ------------ | ------------------------------------------------------ |
+| `--interval`      | `1.0`      | Seconds between broadcast ticks                      |
+| `--speed-start`   | `60.0`     | Initial speed in km/h                                |
+| `--speed-min`     | `0.0`      | Minimum speed in km/h                                |
+| `--speed-max`     | `120.0`    | Maximum speed in km/h                                |
+| `--speed-step`    | `2.5`      | Speed increment per tick                             |
+| `--speed-pattern` | `sawtooth` | `sawtooth`, `ramp`, `random`, or `constant`          |
+| `--hvac-start`    | `off`      | Initial HVAC state:`on` or `off`                     |
+| `--hvac-pattern`  | `toggle`   | `toggle`, `random`, `constant-on`, or `constant-off` |
+| `--duration`      | `0`        | Total seconds to run;`0` = infinite                  |
+| `--output-format` | `json`     | `json` (pretty) or `line` (compact)                  |
+| `--log-dir`       | `logs`     | Directory for rotating`vhal_mock_sender.log`         |
 
 Every option can also be set via an environment variable with the `VHAL_` prefix, e.g. `VHAL_INTERVAL=2.0` or `LOG_LEVEL=DEBUG`.
 

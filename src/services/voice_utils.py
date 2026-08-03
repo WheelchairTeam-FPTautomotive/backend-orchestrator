@@ -16,7 +16,7 @@ groq_client = AsyncGroq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
 async def synthesize_speech_bytes(
     text: str, 
-    voice: str = "vi-VN-HoaiMyNeural"
+    voice: str = "vi-VN-HoaiMyNeural"  # Best for mixed EN/VI
 ) -> tuple[bytes | None, int]:
     """
     Synthesizes natural Vietnamese text using Microsoft Edge Neural TTS.
@@ -67,7 +67,6 @@ async def transcribe_audio_bytes(
         transcription = await groq_client.audio.transcriptions.create(
             file=(filename, audio_bytes),
             model="whisper-large-v3-turbo",  # Ultra-fast, highly accurate
-            language="vi",                    # Force Vietnamese language
             response_format="json",
             temperature=0.0
         )
