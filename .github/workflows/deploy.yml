@@ -10,7 +10,7 @@ name: CD
 #   AWS_REGION          (defaults to ap-southeast-2)
 #   AWS_SESSION_TOKEN    (only for temporary STS credentials)
 #
-# When required secrets are missing, the deploy job is skipped so pushes to
+# When required secrets are missing, deploy steps are skipped so pushes to
 # main stay green. Configure the secrets, then re-run via workflow_dispatch
 # or push again to execute a real deploy.
 
@@ -25,54 +25,69 @@ env:
   DEFAULT_AWS_REGION: ap-southeast-2
 
 jobs:
-  skip-notice:
-    name: CD prerequisites check
-    runs-on: ubuntu-latest
-    if: ${{ secrets.AWS_ACCESS_KEY_ID == '' || secrets.AWS_SECRET_ACCESS_KEY == '' || secrets.ANSIBLE_VAULT_PASSWORD == '' }}
-    steps:
-      - name: Report missing secrets
-        run: |
-          echo "::notice title=CD skipped::Configure repo secrets before deploy: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, ANSIBLE_VAULT_PASSWORD. Optional: AWS_REGION (default ap-southeast-2), AWS_SESSION_TOKEN."
-          echo "CD skipped — required AWS/Ansible secrets are not configured."
-
   build-and-deploy:
     runs-on: ubuntu-latest
-    if: ${{ secrets.AWS_ACCESS_KEY_ID != '' && secrets.AWS_SECRET_ACCESS_KEY != '' && secrets.ANSIBLE_VAULT_PASSWORD != '' }}
     steps:
+      - name: Check deploy secrets
+        id: secrets
+        env:
+          AWS_ACCESS_KEY_ID_SECRET: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY_SECRET: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          ANSIBLE_VAULT_PASSWORD_SECRET: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
+          AWS_REGION_SECRET: ${{ secrets.AWS_REGION }}
+          AWS_SESSION_TOKEN_SECRET: ${{ secrets.AWS_SESSION_TOKEN }}
+        run: |
+          if [ -z "$AWS_ACCESS_KEY_ID_SECRET" ] || [ -z "$AWS_SECRET_ACCESS_KEY_SECRET" ] || [ -z "$ANSIBLE_VAULT_PASSWORD_SECRET" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=CD skipped::Configure repo secrets before deploy: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, ANSIBLE_VAULT_PASSWORD. Optional: AWS_REGION (default ap-southeast-2), AWS_SESSION_TOKEN."
+            echo "CD skipped — required AWS/Ansible secrets are not configured."
+            exit 0
+          fi
+
+          REGION="$AWS_REGION_SECRET"
+          if [ -z "$REGION" ]; then
+            REGION="${DEFAULT_AWS_REGION}"
+          fi
+
+          HAS_SESSION=false
+          if [ -n "$AWS_SESSION_TOKEN_SECRET" ]; then
+            HAS_SESSION=true
+          fi
+
+          {
+            echo "ready=true"
+            echo "region=$REGION"
+            echo "has_session=$HAS_SESSION"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Checkout
+        if: steps.secrets.outputs.ready == 'true'
         uses: actions/checkout@v4
 
-      - name: Resolve AWS region
-        id: aws
-        run: |
-          REGION="${{ secrets.AWS_REGION }}"
-          if [ -z "$REGION" ]; then
-            REGION="${{ env.DEFAULT_AWS_REGION }}"
-          fi
-          echo "region=$REGION" >> "$GITHUB_OUTPUT"
-
       - name: Configure AWS credentials (STS)
-        if: ${{ secrets.AWS_SESSION_TOKEN != '' }}
+        if: steps.secrets.outputs.ready == 'true' && steps.secrets.outputs.has_session == 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
-          aws-region: ${{ steps.aws.outputs.region }}
+          aws-region: ${{ steps.secrets.outputs.region }}
 
       - name: Configure AWS credentials
-        if: ${{ secrets.AWS_SESSION_TOKEN == '' }}
+        if: steps.secrets.outputs.ready == 'true' && steps.secrets.outputs.has_session != 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ steps.aws.outputs.region }}
+          aws-region: ${{ steps.secrets.outputs.region }}
 
       - name: Login to Amazon ECR
+        if: steps.secrets.outputs.ready == 'true'
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build and push Docker image
+        if: steps.secrets.outputs.ready == 'true'
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: backend-orchestrator
@@ -82,42 +97,45 @@ jobs:
           docker push "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
 
       - name: Setup Terraform
+        if: steps.secrets.outputs.ready == 'true'
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.5.7"
 
       # NOTE: This project uses a local Terraform backend by default. In CI,
       # the runner is ephemeral, so the local state file will not persist across
-      # runs. For production CI/CD, migrate the backend to S3 (e.g., add a
-      # backend "s3" block in terraform/backend.tf and set the bucket/key in
-      # GitHub secrets). The workflow is otherwise ready to apply the
-      # infrastructure and run the Ansible deployment.
+      # runs. For production CI/CD, migrate the backend to S3.
       - name: Terraform Init
+        if: steps.secrets.outputs.ready == 'true'
         working-directory: ${{ env.TERRAFORM_DIR }}
         run: terraform init
 
       - name: Terraform Apply
+        if: steps.secrets.outputs.ready == 'true'
         working-directory: ${{ env.TERRAFORM_DIR }}
         run: terraform apply -auto-approve -input=false
 
       - name: Setup Python and Ansible
+        if: steps.secrets.outputs.ready == 'true'
         run: |
           pip install ansible boto3 botocore
           ansible-galaxy collection install community.aws amazon.aws
 
       - name: Write Ansible Vault password
+        if: steps.secrets.outputs.ready == 'true'
         run: |
           printf '%s' '${{ secrets.ANSIBLE_VAULT_PASSWORD }}' > /tmp/vault-pass
           chmod 600 /tmp/vault-pass
 
       - name: Deploy to ECS via Ansible
+        if: steps.secrets.outputs.ready == 'true'
         working-directory: ${{ env.ANSIBLE_DIR }}
         env:
           ANSIBLE_VAULT_PASSWORD_FILE: /tmp/vault-pass
-          AWS_DEFAULT_REGION: ${{ steps.aws.outputs.region }}
+          AWS_DEFAULT_REGION: ${{ steps.secrets.outputs.region }}
         run: |
           ansible-playbook -i inventory/localhost.yml playbooks/deploy.yml
 
       - name: Cleanup Vault password
-        if: always()
+        if: always() && steps.secrets.outputs.ready == 'true'
         run: rm -f /tmp/vault-pass
