@@ -26,7 +26,8 @@ jobs:
         run: terraform fmt -check -diff
 
       - name: Terraform Init
-        run: terraform init
+        # Local/ephemeral runner — skip remote backend so validate stays offline-safe.
+        run: terraform init -backend=false
 
       - name: Terraform Validate
         run: terraform validate

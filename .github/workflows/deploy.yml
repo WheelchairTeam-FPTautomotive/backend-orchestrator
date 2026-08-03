@@ -1,29 +1,72 @@
 name: CD
 
+# Deploys backend-orchestrator to AWS (ECR + Terraform + Ansible/ECS).
+#
+# Required GitHub Actions secrets:
+#   AWS_ACCESS_KEY_ID
+#   AWS_SECRET_ACCESS_KEY
+#   ANSIBLE_VAULT_PASSWORD
+# Optional:
+#   AWS_REGION          (defaults to ap-southeast-2)
+#   AWS_SESSION_TOKEN    (only for temporary STS credentials)
+#
+# When required secrets are missing, the deploy job is skipped so pushes to
+# main stay green. Configure the secrets, then re-run via workflow_dispatch
+# or push again to execute a real deploy.
+
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
 env:
-  AWS_REGION: ${{ secrets.AWS_REGION }}
   TERRAFORM_DIR: ./terraform
   ANSIBLE_DIR: ./ansible
+  DEFAULT_AWS_REGION: ap-southeast-2
 
 jobs:
+  skip-notice:
+    name: CD prerequisites check
+    runs-on: ubuntu-latest
+    if: ${{ secrets.AWS_ACCESS_KEY_ID == '' || secrets.AWS_SECRET_ACCESS_KEY == '' || secrets.ANSIBLE_VAULT_PASSWORD == '' }}
+    steps:
+      - name: Report missing secrets
+        run: |
+          echo "::notice title=CD skipped::Configure repo secrets before deploy: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, ANSIBLE_VAULT_PASSWORD. Optional: AWS_REGION (default ap-southeast-2), AWS_SESSION_TOKEN."
+          echo "CD skipped — required AWS/Ansible secrets are not configured."
+
   build-and-deploy:
     runs-on: ubuntu-latest
+    if: ${{ secrets.AWS_ACCESS_KEY_ID != '' && secrets.AWS_SECRET_ACCESS_KEY != '' && secrets.ANSIBLE_VAULT_PASSWORD != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
+      - name: Resolve AWS region
+        id: aws
+        run: |
+          REGION="${{ secrets.AWS_REGION }}"
+          if [ -z "$REGION" ]; then
+            REGION="${{ env.DEFAULT_AWS_REGION }}"
+          fi
+          echo "region=$REGION" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials (STS)
+        if: ${{ secrets.AWS_SESSION_TOKEN != '' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ steps.aws.outputs.region }}
+
+      - name: Configure AWS credentials
+        if: ${{ secrets.AWS_SESSION_TOKEN == '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ steps.aws.outputs.region }}
 
       - name: Login to Amazon ECR
         id: login-ecr
@@ -35,8 +78,8 @@ jobs:
           ECR_REPOSITORY: backend-orchestrator
           IMAGE_TAG: latest
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker build -t "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" .
+          docker push "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -71,6 +114,7 @@ jobs:
         working-directory: ${{ env.ANSIBLE_DIR }}
         env:
           ANSIBLE_VAULT_PASSWORD_FILE: /tmp/vault-pass
+          AWS_DEFAULT_REGION: ${{ steps.aws.outputs.region }}
         run: |
           ansible-playbook -i inventory/localhost.yml playbooks/deploy.yml
 
