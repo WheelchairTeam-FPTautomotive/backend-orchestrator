@@ -4,7 +4,7 @@ import unicodedata
 
 from dotenv import load_dotenv
 
-import sagemaker_client
+from services import sagemaker_client
 
 # Load environment variables from .env
 load_dotenv()
