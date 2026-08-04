@@ -35,9 +35,9 @@ except Exception as e:
 
 
 CAR_CONTROL_REGEX = (
-    r"\b(bat|tat|mo|dong|tang|giam|chinh|keo|len|xuong)\b.*"
+    r"\b(bat|tat|mo|dong|tang|giam|chinh|keo|len|xuong|gap)\b.*"
     r"\b(dieu hoa|hvac|den|den pha|den hau|cua|kinh|nhac|am luong|quat|gio|"
-    r"nhiet do|ghe|cop|suoi)\b"
+    r"nhiet do|ghe|cop|suoi|guong|mirror)\b"
 )
 RAG_SEARCH_REGEX = (
     r"\b(huong dan|tai lieu|sua|loi|cach nao|lam sao|cach de|cach|bao hanh|"
