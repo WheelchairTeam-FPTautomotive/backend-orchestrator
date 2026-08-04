@@ -1,5 +1,8 @@
 name: CD
 
+# DISABLED 2026-08-04: AWS CD (ECR + Terraform + Ansible/ECS) paused.
+# Re-enable later: (1) uncomment `push` under `on:`, (2) remove `if: false` on the job.
+#
 # Deploys backend-orchestrator to AWS (ECR + Terraform + Ansible/ECS).
 #
 # Required GitHub Actions secrets:
@@ -15,8 +18,8 @@ name: CD
 # or push again to execute a real deploy.
 
 on:
-  push:
-    branches: [main]
+  # push:
+  #   branches: [main]
   workflow_dispatch:
 
 env:
@@ -26,6 +29,7 @@ env:
 
 jobs:
   build-and-deploy:
+    if: false  # DISABLED: remove this line to re-enable AWS CD
     runs-on: ubuntu-latest
     steps:
       - name: Check deploy secrets

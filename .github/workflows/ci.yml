@@ -1,14 +1,18 @@
 name: CI
 
+# DISABLED 2026-08-04: AWS-related CI (Terraform validate + Ansible/amazon.aws) paused.
+# Re-enable later: (1) uncomment `push` / `pull_request` under `on:`, (2) remove `if: false` on both jobs.
+
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  # push:
+  #   branches: [main]
+  # pull_request:
+  #   branches: [main]
   workflow_dispatch:
 
 jobs:
   validate:
+    if: false  # DISABLED: remove this line to re-enable Terraform CI
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -33,6 +37,7 @@ jobs:
         run: terraform validate
 
   ansible-syntax:
+    if: false  # DISABLED: remove this line to re-enable Ansible CI
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
