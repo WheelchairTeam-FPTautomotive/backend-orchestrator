@@ -97,3 +97,43 @@ variable "openai_api_key" {
   sensitive   = true
   default     = ""
 }
+
+# ------------------------------------------------------------------------------
+# SageMaker / Billing
+# ------------------------------------------------------------------------------
+variable "sagemaker_model_id" {
+  description = "Hugging Face model ID for the SageMaker LLM endpoint"
+  type        = string
+  default     = "TheBloke/Mistral-7B-Instruct-v0.2-AWQ"
+}
+
+variable "sagemaker_container_image" {
+  description = "AWS Deep Learning Container image for the SageMaker vLLM endpoint"
+  type        = string
+  default     = "763104351884.dkr.ecr.ap-southeast-2.amazonaws.com/huggingface-vllm:0.25.1-transformers5.10-gpu-py312-cu130-ubuntu22.04"
+}
+
+variable "sagemaker_instance_type" {
+  description = "SageMaker endpoint instance type"
+  type        = string
+  default     = "ml.g4dn.xlarge"
+}
+
+variable "deploy_sagemaker_model" {
+  description = "When true, create the SageMaker model, endpoint config, and endpoint"
+  type        = bool
+  default     = false
+}
+
+variable "sagemaker_execution_role_arn" {
+  description = "Optional pre-existing IAM role ARN for SageMaker execution. If empty, a role is created."
+  type        = string
+  default     = ""
+}
+
+variable "sagemaker_model_bucket_name" {
+  description = "S3 bucket for SageMaker model artifacts"
+  type        = string
+  default     = "backend-orchestrator-models-808454010747"
+}
+

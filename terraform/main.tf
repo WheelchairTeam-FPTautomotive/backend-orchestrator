@@ -278,7 +278,11 @@ module "ecs_service" {
         { name = "LOG_LEVEL", value = var.log_level },
         { name = "CORE_AI_URL", value = var.core_ai_url },
         { name = "APP_NAME", value = "KMS Cockpit API Gateway Orchestrator" },
-        { name = "APP_VERSION", value = "1.0.0" }
+        { name = "APP_VERSION", value = "1.0.0" },
+        { name = "SAGEMAKER_LLM_ENDPOINT_NAME", value = var.deploy_sagemaker_model ? aws_sagemaker_endpoint.llm[0].name : "" },
+        { name = "SAGEMAKER_REGION", value = var.aws_region },
+        { name = "SAGEMAKER_USE_VPC_ENDPOINT", value = "true" },
+        { name = "SAGEMAKER_VPC_ENDPOINT_URL", value = "https://${aws_vpc_endpoint.sagemaker_runtime.dns_entry[0].dns_name}" }
       ]
 
       secrets = [

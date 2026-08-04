@@ -1,0 +1,31 @@
+---
+# Nightly teardown playbook: remove the SageMaker endpoint and endpoint
+# configuration while keeping the S3 model artifacts and IAM role for fast,
+# cheap redeployment.
+- name: Teardown SageMaker LLM endpoint
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Load Terraform outputs as JSON
+      ansible.builtin.command:
+        cmd: "{{ terraform_command }} output -json"
+        chdir: "{{ terraform_dir }}"
+      changed_when: false
+      register: terraform_outputs_raw
+
+    - name: Parse Terraform outputs
+      ansible.builtin.set_fact:
+        terraform_outputs: "{{ terraform_outputs_raw.stdout | from_json }}"
+
+    - name: Set teardown facts
+      ansible.builtin.set_fact:
+        sagemaker_endpoint_name: "{{ terraform_outputs.sagemaker_endpoint_name.value | default('') }}"
+
+    - name: Run SageMaker model teardown role
+      ansible.builtin.include_role:
+        name: sagemaker_model_deploy
+        tasks_from: teardown.yml
+      vars:
+        sagemaker_allow_teardown: true

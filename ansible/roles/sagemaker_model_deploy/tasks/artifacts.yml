@@ -1,0 +1,42 @@
+---
+# Download the Hugging Face model snapshot, package it as model.tar.gz, and
+# upload it to the S3 bucket created by the Terraform base layer.
+
+- name: Ensure model staging directory exists
+  ansible.builtin.file:
+    path: "{{ sagemaker_model_local_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Check if model tarball already exists
+  ansible.builtin.stat:
+    path: "{{ sagemaker_model_tarball }}"
+  register: model_tarball_stat
+
+- name: Install required Python packages
+  ansible.builtin.pip:
+    name:
+      - huggingface_hub
+      - boto3
+    state: present
+  when: not model_tarball_stat.stat.exists
+
+- name: Prepare model tarball
+  ansible.builtin.command: >
+    {{ ansible_playbook_python }} {{ role_path }}/files/prepare_model.py
+    --model-id {{ sagemaker_model_id | quote }}
+    --local-dir {{ sagemaker_model_local_dir | quote }}
+    --tarball {{ sagemaker_model_tarball | quote }}
+    --skip-if-exists
+  register: model_prepare
+  changed_when: "'Created' in model_prepare.stdout"
+  when: not model_tarball_stat.stat.exists
+
+- name: Upload model tarball to S3
+  ansible.builtin.command: >
+    {{ aws_cli_command }} s3 cp {{ sagemaker_model_tarball | quote }}
+    s3://{{ sagemaker_model_bucket }}/{{ sagemaker_model_s3_key }}
+    --region {{ aws_region }}
+  register: s3_upload
+  changed_when: "'upload:' in s3_upload.stdout"
+  when: sagemaker_model_bucket | length > 0

@@ -1,0 +1,40 @@
+---
+# Destroy the SageMaker endpoint and endpoint configuration via Terraform while
+# keeping the S3 model artifacts, IAM role, and base networking resources for
+# fast/cheap redeployment.
+
+- name: Confirm teardown is allowed
+  ansible.builtin.fail:
+    msg: "SageMaker teardown is disabled. Set sagemaker_allow_teardown=true to run."
+  when: not sagemaker_allow_teardown
+
+- name: Apply Terraform teardown layer
+  ansible.builtin.command:
+    cmd: >
+      {{ terraform_command }} apply
+      -var=deploy_sagemaker_model=false
+      -var=aws_region={{ aws_region }}
+      -target=aws_sagemaker_model.llm
+      -target=aws_sagemaker_endpoint_configuration.llm
+      -target=aws_sagemaker_endpoint.llm
+      -auto-approve -input=false
+    chdir: "{{ terraform_dir }}"
+  register: terraform_teardown
+  changed_when: "'0 added, 0 changed, 0 destroyed' not in terraform_teardown.stdout"
+
+- name: Confirm endpoint is removed
+  ansible.builtin.command: >
+    {{ aws_cli_command }} sagemaker describe-endpoint
+    --endpoint-name {{ sagemaker_endpoint_name | default('') }}
+    --region {{ aws_region }}
+    --query EndpointStatus
+    --output text
+  register: endpoint_teardown_status
+  failed_when: endpoint_teardown_status.rc == 0
+  changed_when: false
+  when: sagemaker_endpoint_name | default('') | length > 0
+  ignore_errors: true
+
+- name: Show teardown result
+  ansible.builtin.debug:
+    msg: "SageMaker endpoint teardown complete. Model artifacts remain in S3."
