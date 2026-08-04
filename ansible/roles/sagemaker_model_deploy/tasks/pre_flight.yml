@@ -1,0 +1,69 @@
+---
+# Verify AWS credentials and guard against duplicate GPU endpoints / missing quota.
+
+- name: Check AWS CLI is available
+  ansible.builtin.command:
+    cmd: "{{ aws_cli_command }} --version"
+  changed_when: false
+
+- name: Fail if a SageMaker execution role ARN is not provided
+  ansible.builtin.fail:
+    msg: |
+      The hackathon IAM user cannot create new IAM roles. Set a pre-existing
+      SageMaker execution role ARN via the variable sagemaker_execution_role_arn
+      (e.g. ansible-playbook ... -e sagemaker_execution_role_arn=arn:aws:iam::...).
+  when: >
+    sagemaker_execution_role_arn is not defined
+    or sagemaker_execution_role_arn | length == 0
+
+- name: List current InService SageMaker endpoints
+  ansible.builtin.command: >
+    {{ aws_cli_command }} sagemaker list-endpoints
+    --region {{ aws_region }}
+    --query 'Endpoints[?EndpointStatus==`InService`].[EndpointName,EndpointStatus]'
+    --output json
+  changed_when: false
+  register: sagemaker_endpoints
+
+- name: Fail if an InService endpoint already exists
+  ansible.builtin.fail:
+    msg: |
+      One or more SageMaker endpoints are already InService.
+      Running another GPU endpoint could exceed the $200 budget.
+      InService endpoints: {{ sagemaker_endpoints.stdout }}
+  when: sagemaker_endpoints.stdout | from_json | length > 0
+
+- name: Check GPU instance service quota
+  ansible.builtin.command: >
+    {{ aws_cli_command }} service-quotas list-service-quotas
+    --service-code sagemaker
+    --region {{ aws_region }}
+    --query "Quotas[?contains(QuotaName, '{{ sagemaker_instance_type }}') || contains(QuotaName, '{{ sagemaker_instance_type_family }}')].[QuotaName,Value,QuotaCode]"
+    --output json
+  changed_when: false
+  failed_when: false
+  register: sagemaker_quota
+
+- name: Show discovered GPU quota
+  ansible.builtin.debug:
+    var: sagemaker_quota.stdout
+
+- name: Parse quota values
+  ansible.builtin.set_fact:
+    sagemaker_quota_values: "{{ sagemaker_quota.stdout | from_json | map(attribute='1') | map('float') | list }}"
+
+- name: Fail if GPU instance quota is explicitly zero
+  ansible.builtin.fail:
+    msg: |
+      The discovered SageMaker quota for {{ sagemaker_instance_type }} is zero or negative.
+      Quotas: {{ sagemaker_quota.stdout }}
+  when: >
+    (sagemaker_quota_values | length > 0)
+    and ((sagemaker_quota_values | max) <= 0)
+
+- name: Warn if GPU instance quota could not be discovered
+  ansible.builtin.debug:
+    msg: |
+      Could not discover a SageMaker quota for {{ sagemaker_instance_type }}.
+      Continuing; please verify the quota manually in the AWS console.
+  when: sagemaker_quota_values | length == 0

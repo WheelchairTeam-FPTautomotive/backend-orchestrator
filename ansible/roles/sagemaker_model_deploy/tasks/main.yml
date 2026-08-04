@@ -1,0 +1,22 @@
+---
+# Phased SageMaker model deployment.
+# 1. Verify quota and budget guards.
+# 2. Apply the Terraform base layer (S3, IAM, networking, billing alarm).
+# 3. Download the model from Hugging Face and upload it to S3.
+# 4. Apply the Terraform endpoint layer (model, endpoint config, endpoint).
+# 5. Wait until the SageMaker endpoint is InService.
+
+- name: Run pre-flight checks
+  ansible.builtin.include_tasks: pre_flight.yml
+
+- name: Apply base infrastructure
+  ansible.builtin.include_tasks: base.yml
+
+- name: Prepare and upload model artifacts
+  ansible.builtin.include_tasks: artifacts.yml
+
+- name: Deploy SageMaker endpoint
+  ansible.builtin.include_tasks: deploy_endpoint.yml
+
+- name: Wait for endpoint to become healthy
+  ansible.builtin.include_tasks: health_check.yml

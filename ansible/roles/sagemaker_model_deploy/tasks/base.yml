@@ -1,0 +1,48 @@
+---
+# Apply the Terraform base layer: S3 bucket, IAM role, security groups, S3 VPC
+# endpoint, and SageMaker Runtime VPC endpoint. The SageMaker endpoint
+# resources are excluded by setting deploy_sagemaker_model=false. Targets are
+# used to avoid recreating the previously-deleted ECS/ALB/OpenSearch stack.
+
+- name: Apply Terraform base layer
+  ansible.builtin.command:
+    cmd: >
+      {{ terraform_command }} apply
+      -var=deploy_sagemaker_model=false
+      -var=aws_region={{ aws_region }}
+      -var=sagemaker_execution_role_arn={{ sagemaker_execution_role_arn }}
+      -target=module.vpc
+      -target=aws_s3_bucket.model_artifacts
+      -target=aws_s3_bucket_public_access_block.model_artifacts
+      -target=aws_s3_bucket_policy.model_artifacts
+      -target=aws_security_group.sagemaker_endpoint
+      -target=aws_security_group.sagemaker_runtime_vpc_endpoint
+      -target=aws_vpc_endpoint.s3
+      -target=aws_vpc_endpoint.sagemaker_runtime
+      -auto-approve -input=false
+    chdir: "{{ terraform_dir }}"
+  register: terraform_base_apply
+  changed_when: "'0 added, 0 changed, 0 destroyed' not in terraform_base_apply.stdout"
+
+- name: Refresh Terraform outputs
+  ansible.builtin.command:
+    cmd: "{{ terraform_command }} output -json"
+    chdir: "{{ terraform_dir }}"
+  changed_when: false
+  register: terraform_outputs_raw
+
+- name: Parse Terraform outputs
+  ansible.builtin.set_fact:
+    terraform_outputs: "{{ terraform_outputs_raw.stdout | from_json }}"
+
+- name: Update SageMaker facts from Terraform outputs
+  ansible.builtin.set_fact:
+    sagemaker_model_bucket: "{{ terraform_outputs.sagemaker_model_bucket_name.value }}"
+    sagemaker_execution_role_arn: "{{ terraform_outputs.sagemaker_execution_role_arn.value }}"
+
+- name: Validate model bucket from Terraform output
+  ansible.builtin.fail:
+    msg: "The Terraform output 'sagemaker_model_bucket_name' is missing or empty."
+  when: >
+    sagemaker_model_bucket is not defined
+    or sagemaker_model_bucket | length == 0

@@ -32,3 +32,32 @@ output "ecs_log_group_name" {
   description = "CloudWatch log group for the ECS Fargate service task definition"
   value       = aws_cloudwatch_log_group.ecs_service.name
 }
+
+# ------------------------------------------------------------------------------
+# SageMaker / Billing
+# ------------------------------------------------------------------------------
+output "sagemaker_model_bucket_name" {
+  description = "S3 bucket for SageMaker model artifacts"
+  value       = aws_s3_bucket.model_artifacts.bucket
+}
+
+output "sagemaker_execution_role_arn" {
+  description = "IAM role ARN used by the SageMaker endpoint"
+  value       = local.sagemaker_execution_role_arn
+}
+
+output "sagemaker_endpoint_name" {
+  description = "Name of the SageMaker LLM endpoint"
+  value       = var.deploy_sagemaker_model ? aws_sagemaker_endpoint.llm[0].name : ""
+}
+
+output "sagemaker_endpoint_arn" {
+  description = "ARN of the SageMaker LLM endpoint"
+  value       = var.deploy_sagemaker_model ? aws_sagemaker_endpoint.llm[0].arn : ""
+}
+
+output "sagemaker_runtime_vpc_endpoint_dns" {
+  description = "DNS name of the SageMaker Runtime VPC endpoint"
+  value       = aws_vpc_endpoint.sagemaker_runtime.dns_entry[0].dns_name
+}
+

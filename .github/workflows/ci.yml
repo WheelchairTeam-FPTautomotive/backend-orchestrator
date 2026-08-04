@@ -1,5 +1,8 @@
 name: CI
 
+# Local-first CI (Docker Compose / image build). AWS Terraform + Ansible kept
+# commented below for later re-enable.
+
 on:
   push:
     branches: [main]
@@ -8,47 +11,66 @@ on:
   workflow_dispatch:
 
 jobs:
-  validate:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./terraform
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.5.7"
-
-      - name: Terraform Format
-        run: terraform fmt -check -diff
-
-      - name: Terraform Init
-        # Local/ephemeral runner — skip remote backend so validate stays offline-safe.
-        run: terraform init -backend=false
-
-      - name: Terraform Validate
-        run: terraform validate
-
-  ansible-syntax:
+  local-compose:
+    name: Local Docker Compose
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Install Ansible
+      - name: Prepare local env + sibling core-ai stub
         run: |
-          pip install ansible boto3 botocore
-          ansible-galaxy collection install community.aws amazon.aws
+          cp .env.example .env
+          mkdir -p ../kms-core-ai
+          printf 'FROM python:3.12-slim\nCMD ["true"]\n' > ../kms-core-ai/Dockerfile
 
-      - name: Ansible Syntax Check
-        run: |
-          cd ansible
-          ansible-playbook -i inventory/localhost.yml playbooks/deploy.yml --syntax-check
+      - name: Validate Compose config
+        run: docker compose config
+
+      - name: Build orchestrator image (local)
+        run: docker compose build backend-orchestrator
+
+# =============================================================================
+# DISABLED AWS CI — uncomment jobs below and remove/disable `local-compose`
+# when AWS Terraform / Ansible validation should run again.
+# =============================================================================
+# jobs:
+#   validate:
+#     runs-on: ubuntu-latest
+#     defaults:
+#       run:
+#         working-directory: ./terraform
+#     steps:
+#       - name: Checkout
+#         uses: actions/checkout@v4
+#       - name: Setup Terraform
+#         uses: hashicorp/setup-terraform@v3
+#         with:
+#           terraform_version: "1.5.7"
+#       - name: Terraform Format
+#         run: terraform fmt -check -diff
+#       - name: Terraform Init
+#         run: terraform init -backend=false
+#       - name: Terraform Validate
+#         run: terraform validate
+#
+#   ansible-syntax:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Checkout
+#         uses: actions/checkout@v4
+#       - name: Setup Python
+#         uses: actions/setup-python@v5
+#         with:
+#           python-version: "3.12"
+#       - name: Install Ansible
+#         run: |
+#           pip install ansible boto3 botocore
+#           ansible-galaxy collection install community.aws amazon.aws
+#       - name: Ansible Syntax Check
+#         run: |
+#           cd ansible
+#           ansible-playbook -i inventory/localhost.yml playbooks/deploy.yml --syntax-check

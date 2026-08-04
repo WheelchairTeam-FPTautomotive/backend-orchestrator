@@ -1,0 +1,43 @@
+---
+# Entry-point playbook: deploy the SageMaker LLM model for backend-orchestrator.
+# This playbook is intentionally phased:
+#   1. Pre-flight checks (quota, existing endpoints, budget guard)
+#   2. Terraform base layer (S3, IAM, security group, VPC endpoints, billing alarm)
+#   3. Model artifact download and upload to S3
+#   4. Terraform endpoint layer (SageMaker model, endpoint config, endpoint)
+#   5. Health check until the endpoint is InService
+- name: Deploy SageMaker LLM model
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Load Terraform outputs as JSON
+      ansible.builtin.command:
+        cmd: "{{ terraform_command }} output -json"
+        chdir: "{{ terraform_dir }}"
+      changed_when: false
+      register: terraform_outputs_raw
+
+    - name: Parse Terraform outputs
+      ansible.builtin.set_fact:
+        terraform_outputs: "{{ terraform_outputs_raw.stdout | from_json }}"
+
+    - name: Set SageMaker facts from Terraform outputs
+      ansible.builtin.set_fact:
+        sagemaker_model_bucket: "{{ terraform_outputs.sagemaker_model_bucket_name.value | default('') }}"
+        sagemaker_execution_role_arn: "{{ terraform_outputs.sagemaker_execution_role_arn.value | default('') }}"
+
+    - name: Validate model bucket from Terraform output
+      ansible.builtin.fail:
+        msg: "The Terraform output 'sagemaker_model_bucket_name' is missing or empty."
+      when: >
+        sagemaker_model_bucket is not defined
+        or sagemaker_model_bucket | length == 0
+
+    - name: Run SageMaker model deployment role
+      ansible.builtin.include_role:
+        name: sagemaker_model_deploy
+      vars:
+        sagemaker_model_bucket: "{{ terraform_outputs.sagemaker_model_bucket_name.value }}"
+        sagemaker_execution_role_arn: "{{ terraform_outputs.sagemaker_execution_role_arn.value }}"

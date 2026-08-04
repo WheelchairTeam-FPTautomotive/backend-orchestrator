@@ -1,0 +1,29 @@
+---
+# Apply the Terraform endpoint layer, which creates the SageMaker model,
+# endpoint configuration, and endpoint.
+
+- name: Apply Terraform endpoint layer
+  ansible.builtin.command:
+    cmd: >
+      {{ terraform_command }} apply
+      -var=deploy_sagemaker_model=true
+      -var=aws_region={{ aws_region }}
+      -var=sagemaker_execution_role_arn={{ sagemaker_execution_role_arn }}
+      -target=aws_sagemaker_model.llm
+      -target=aws_sagemaker_endpoint_configuration.llm
+      -target=aws_sagemaker_endpoint.llm
+      -auto-approve -input=false
+    chdir: "{{ terraform_dir }}"
+  register: terraform_endpoint_apply
+  changed_when: "'0 added, 0 changed, 0 destroyed' not in terraform_endpoint_apply.stdout"
+
+- name: Refresh Terraform outputs
+  ansible.builtin.command:
+    cmd: "{{ terraform_command }} output -json"
+    chdir: "{{ terraform_dir }}"
+  changed_when: false
+  register: terraform_outputs_raw
+
+- name: Parse Terraform outputs
+  ansible.builtin.set_fact:
+    terraform_outputs: "{{ terraform_outputs_raw.stdout | from_json }}"
