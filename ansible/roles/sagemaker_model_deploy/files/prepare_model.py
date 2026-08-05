@@ -1,9 +1,11 @@
-#!/usr/bin/env python3
 """Download a Hugging Face model snapshot and package it as a SageMaker model.tar.gz."""
+
+# --- START MODIFICATION ---
+# Ruff CI fixes: drop shebang (EXE001), unused sys (F401), bare raise (TRY201)
+# --- END MODIFICATION ---
 
 import argparse
 import os
-import sys
 import tarfile
 from pathlib import Path
 
@@ -28,9 +30,9 @@ def main():
 
     try:
         from huggingface_hub import snapshot_download
-    except ImportError as exc:
+    except ImportError:
         print("huggingface_hub is not installed. Run: pip install huggingface_hub")
-        raise exc
+        raise
 
     local_dir.mkdir(parents=True, exist_ok=True)
     extracted_dir.mkdir(parents=True, exist_ok=True)
