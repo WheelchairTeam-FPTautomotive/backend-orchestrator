@@ -111,6 +111,14 @@ class VoiceQueryResponse(BaseModel):
     citations: list[CitationPayload] = []
     latency: LatencyMetrics
 
+class TtsRequest(BaseModel):
+    text: str
+    language: str = "vi"
+
+class TtsResponse(BaseModel):
+    audio_base64: str | None
+    latency_ms: int
+
 # ==========================================
 # Router Endpoints
 # ==========================================
@@ -187,8 +195,30 @@ async def route_text_query(payload: QueryRequest, request: Request):
     # --- END MODIFICATION ---
 
 
+class SttResponse(BaseModel):
+    transcript: str
+    latency_ms: int
+
+@router.post("/copilot/tts", response_model=TtsResponse)
+async def route_tts(request: TtsRequest):
+    audio_bytes, latency = await synthesize_speech_bytes(request.text, language=request.language, force_edge_tts=True)
+    base64_str = base64.b64encode(audio_bytes).decode("utf-8") if audio_bytes else None
+    return TtsResponse(audio_base64=base64_str, latency_ms=latency)
+
+@router.post("/copilot/stt", response_model=SttResponse)
+async def route_stt(file: UploadFile = File(...)):
+    audio_content = await file.read()
+    if not audio_content:
+        raise HTTPException(status_code=400, detail="Uploaded audio file is empty.")
+    
+    transcript, stt_ms = await transcribe_audio_bytes(audio_content, filename=file.filename or "input_voice.mp3")
+    if not transcript:
+        raise HTTPException(status_code=500, detail="Failed to transcribe audio query.")
+        
+    return SttResponse(transcript=transcript, latency_ms=stt_ms)
+
 @router.post("/copilot/voice-query", response_model=VoiceQueryResponse)
-async def route_voice_query(file: UploadFile, request: Request, language: str = Form("vi")):
+async def route_voice_query(request: Request, file: UploadFile = File(...), language: str = Form("vi")):
     total_start = time.perf_counter()
     logger.info(f"[Gateway] Received voice query file: name={file.filename}")
 

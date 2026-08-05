@@ -47,75 +47,71 @@ def _pcm_to_wav(pcm_data: bytes, sample_rate: int = 24000, channels: int = 1, bi
 
 async def synthesize_speech_bytes(
     text: str, 
-    language: str = "vi"
+    language: str = "vi",
+    force_edge_tts: bool = False
 ) -> tuple[bytes | None, int]:
     """
-    Synthesizes natural text using Gemini Multimodal Audio API.
-    Returns: (wav_audio_bytes, latency_ms)
+    Synthesizes natural text. Tries Gemini Multimodal Audio API first, falls back to Edge TTS.
+    Returns: (audio_bytes, latency_ms)
     """
     start_time = time.perf_counter()
 
     if not text.strip():
         return None, int((time.perf_counter() - start_time) * 1000)
 
-    if not GEMINI_KEYS:
-        print("[Gemini TTS Error] No GEMINI_API_KEY found in .env!")
-        return None, int((time.perf_counter() - start_time) * 1000)
+    # Auto-detect language
+    is_vietnamese = language == "vi" or bool(re.search(r"[áàảãạăắằẳẵặâấầẩẫậđéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵ]", text, re.IGNORECASE))
 
-    current_key = next(key_iterator)
-
-    # Auto-detect language: if text contains Vietnamese diacritics, use Kore (VI), else use Aoede (EN)
-    is_vietnamese = bool(re.search(r"[áàảãạăắằẳẵặâấầẩẫậđéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵ]", text, re.IGNORECASE))
-    voice_name = "Kore" if is_vietnamese else "Aoede"
-
-    # Call Gemini directly
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key={current_key}"
-    
-    payload = {
-        "contents": [{"parts": [{"text": text}]}],
-        "generationConfig": {
-            "responseModalities": ["AUDIO"],
-            "speechConfig": {
-                "voiceConfig": {
-                    "prebuiltVoiceConfig": {
-                        "voiceName": voice_name
-                    }
+    # 1. Try Gemini TTS (if key exists)
+    if GEMINI_KEYS and not force_edge_tts:
+        try:
+            current_key = next(key_iterator)
+            voice_name = "Kore" if is_vietnamese else "Aoede"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key={current_key}"
+            
+            payload = {
+                "contents": [{"parts": [{"text": text}]}],
+                "generationConfig": {
+                    "responseModalities": ["AUDIO"],
+                    "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": voice_name}}}
                 }
             }
-        }
-    }
 
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+                data = response.json()
+                
+                candidates = data.get("candidates", [])
+                if candidates:
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    for part in parts:
+                        if "inlineData" in part:
+                            pcm_bytes = base64.b64decode(part["inlineData"]["data"])
+                            wav_bytes = _pcm_to_wav(pcm_bytes, sample_rate=24000)
+                            latency = int((time.perf_counter() - start_time) * 1000)
+                            print(f"[Gemini TTS] Success! Generated {len(wav_bytes)} bytes WAV in {latency}ms")
+                            return wav_bytes, latency
+        except Exception as e:
+            print(f"[Gemini TTS Warning] Failed: {e}. Falling back to Edge TTS...")
+
+    # 2. Fallback to Edge TTS (Free, no key required)
+    print("[Edge TTS] Using Microsoft Edge TTS fallback...")
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            print(f"[Gemini TTS] Requesting voice='{voice_name}' via direct Google API...")
-            response = await client.post(url, json=payload)
-            response.raise_for_status()
-            data = response.json()
-            
-            candidates = data.get("candidates", [])
-            if not candidates:
-                print(f"[Gemini TTS Error] No candidates in response: {data}")
-                return None, int((time.perf_counter() - start_time) * 1000)
-            
-            parts = candidates[0].get("content", {}).get("parts", [])
-            for part in parts:
-                if "inlineData" in part:
-                    mime_type = part["inlineData"].get("mimeType", "")
-                    audio_b64 = part["inlineData"]["data"]
-                    pcm_bytes = base64.b64decode(audio_b64)
-                    
-                    # Gemini returns raw PCM (Linear16, 24kHz, mono)
-                    # Wrap in WAV header so Android MediaPlayer can decode it
-                    wav_bytes = _pcm_to_wav(pcm_bytes, sample_rate=24000)
-                    
-                    latency = int((time.perf_counter() - start_time) * 1000)
-                    print(f"[Gemini TTS] Success! Generated {len(wav_bytes)} bytes WAV in {latency}ms (mime={mime_type})")
-                    return wav_bytes, latency
-                    
-            print(f"[Gemini TTS Error] No inlineData found in parts: {parts}")
-            return None, int((time.perf_counter() - start_time) * 1000)
+        import edge_tts
+        voice = "vi-VN-HoaiMyNeural" if is_vietnamese else "en-US-AriaNeural"
+        
+        communicate = edge_tts.Communicate(text, voice)
+        audio_data = bytearray()
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                audio_data.extend(chunk["data"])
+                
+        latency = int((time.perf_counter() - start_time) * 1000)
+        print(f"[Edge TTS] Success! Generated {len(audio_data)} bytes in {latency}ms (voice={voice})")
+        return bytes(audio_data), latency
     except Exception as e:
-        print(f"[Gemini TTS Error]: {e}")
+        print(f"[Edge TTS Error]: {e}")
         return None, int((time.perf_counter() - start_time) * 1000)
 
 
@@ -124,33 +120,36 @@ async def transcribe_audio_bytes(
     filename: str = "input_voice.mp3"
 ) -> tuple[str, int]:
     """
-    Transcribes audio bytes into Vietnamese text using Groq's ultra-fast Whisper API.
+    Transcribes audio bytes into Vietnamese text using Google's FREE Web Speech API.
+    No API Key required! No token limits!
     Returns: (transcribed_text, latency_ms)
     """
     start_time = time.perf_counter()
-
-    if not groq_client:
-        print("[Groq STT Error] GROQ_API_KEY not found in .env!")
-        return "", int((time.perf_counter() - start_time) * 1000)
-
     if not audio_bytes:
         return "", int((time.perf_counter() - start_time) * 1000)
 
     try:
-        # Send raw audio tuple directly from memory to Groq API
-        transcription = await groq_client.audio.transcriptions.create(
-            file=(filename, audio_bytes),
-            model="whisper-large-v3-turbo",  # Ultra-fast, highly accurate
-            response_format="json",
-            temperature=0.0
-        )
-
-        transcribed_text = transcription.text.strip()
+        import speech_recognition as sr
+        import io
+        import asyncio
+        
+        loop = asyncio.get_event_loop()
+        
+        def run_sr():
+            recognizer = sr.Recognizer()
+            # Recognize using Google Web Speech API (Free, no key required)
+            with sr.AudioFile(io.BytesIO(audio_bytes)) as source:
+                audio_data = recognizer.record(source)
+            return recognizer.recognize_google(audio_data, language="vi-VN")
+            
+        transcribed_text = await loop.run_in_executor(None, run_sr)
+        
         latency = int((time.perf_counter() - start_time) * 1000)
+        print(f"[Google Free STT] Success! Transcribed: '{transcribed_text}' in {latency}ms")
         return transcribed_text, latency
 
     except Exception as e:
-        print(f"[Groq Transcribe Error]: {e}")
+        print(f"[Google Free STT Error]: {e}")
         latency = int((time.perf_counter() - start_time) * 1000)
         return "", latency
 
