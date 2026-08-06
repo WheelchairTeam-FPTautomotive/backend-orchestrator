@@ -9,7 +9,7 @@ TERRAFORM_CMD="$(command -v terraform || command -v terraform.exe || echo terraf
 ANSIBLE_CMD="$(command -v ansible-playbook || echo ansible-playbook)"
 
 echo "==> Running Terraform format check"
-(cd "$ROOT/terraform" && $TERRAFORM_CMD fmt -check -diff)
+(cd "$ROOT/terraform" && $TERRAFORM_CMD fmt -check)
 
 echo "==> Running Terraform init"
 (cd "$ROOT/terraform" && $TERRAFORM_CMD init -backend=false)
@@ -17,10 +17,12 @@ echo "==> Running Terraform init"
 echo "==> Running Terraform validate"
 (cd "$ROOT/terraform" && $TERRAFORM_CMD validate)
 
-echo "==> Running Ansible syntax check"
+echo "==> Running Ansible syntax check (ECS + SageMaker model playbooks)"
 (
   cd "$ROOT/ansible"
   $ANSIBLE_CMD -i inventory/localhost.yml playbooks/deploy.yml --syntax-check
+  $ANSIBLE_CMD -i inventory/localhost.yml playbooks/deploy-models.yml --syntax-check
+  $ANSIBLE_CMD -i inventory/localhost.yml playbooks/teardown-models.yml --syntax-check
 )
 
 echo "==> All validation checks passed"

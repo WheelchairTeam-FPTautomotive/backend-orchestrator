@@ -3,10 +3,13 @@
 # Override these via inventory variables, group_vars, or command-line extra-vars.
 
 # SageMaker model configuration
-sagemaker_model_id: "TheBloke/Mistral-7B-Instruct-v0.2-AWQ"
+# MODIFIED: Qwen AWQ for ml.g4dn.xlarge (16GB). Do not set SM_VLLM_QUANTIZATION in TF
+# for pre-AWQ weights. Local Ollama freeze: qwen2.5:7b-instruct (behavior parity).
+sagemaker_model_id: "Qwen/Qwen2.5-7B-Instruct-AWQ"
 sagemaker_model_slug: "{{ sagemaker_model_id | split('/') | last | regex_replace('[^0-9a-zA-Z]', '-') | lower }}"
 sagemaker_container_image: "763104351884.dkr.ecr.ap-southeast-2.amazonaws.com/huggingface-vllm:0.25.1-transformers5.10-gpu-py312-cu130-ubuntu22.04"
 sagemaker_instance_type: "ml.g4dn.xlarge"
+sagemaker_inference_ami_version: "al2-ami-sagemaker-inference-gpu-3-1"
 sagemaker_instance_type_family: "{{ sagemaker_instance_type.split('.')[1] }}"
 
 # S3 configuration (filled from Terraform outputs in the playbook)

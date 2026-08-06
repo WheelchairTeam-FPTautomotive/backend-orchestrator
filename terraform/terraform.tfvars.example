@@ -17,3 +17,12 @@ core_ai_url = "http://CHANGE_ME:8001/api/v1/search"
 
 # Replace with the real key. This value is stored in AWS Secrets Manager.
 openai_api_key = "sk-..."
+
+# --- SageMaker GPU (issues #12 / #17) — keep deploy_sagemaker_model=false until mentor IAM ---
+# Local Ollama freeze: qwen2.5:7b-instruct ↔ cloud HF AWQ id (behavior parity).
+sagemaker_model_id              = "Qwen/Qwen2.5-7B-Instruct-AWQ"
+sagemaker_instance_type         = "ml.g4dn.xlarge"
+sagemaker_inference_ami_version = "al2-ami-sagemaker-inference-gpu-3-1" # required for cu130 images
+deploy_sagemaker_model          = false
+# Hackathon users lack iam:CreateRole — set a pre-existing role ARN before apply:
+# sagemaker_execution_role_arn  = "arn:aws:iam::ACCOUNT:role/YourSageMakerExecutionRole"

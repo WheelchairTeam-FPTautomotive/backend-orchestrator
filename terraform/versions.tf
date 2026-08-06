@@ -5,8 +5,9 @@ terraform {
 
   required_providers {
     aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
+      source = "hashicorp/aws"
+      # inference_ami_version on SageMaker endpoint config needs >= 5.56
+      version = ">= 5.56, < 6.0"
     }
   }
 }

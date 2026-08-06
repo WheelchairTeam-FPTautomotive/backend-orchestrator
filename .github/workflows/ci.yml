@@ -33,6 +33,30 @@ jobs:
       - name: Build orchestrator image (local)
         run: docker compose build backend-orchestrator
 
+  # MODIFIED: permission-safe GPU IaC checks (no terraform apply / no AWS secrets)
+  pseudo-gpu-iac:
+    name: Pseudo SageMaker GPU IaC
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.5.7"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Ansible
+        run: pip install ansible
+
+      - name: Run pseudo GPU checks
+        run: bash ./scripts/pseudo_gpu_check.sh
+
 # =============================================================================
 # DISABLED AWS CI — uncomment jobs below and remove/disable `local-compose`
 # when AWS Terraform / Ansible validation should run again.

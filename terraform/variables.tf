@@ -101,10 +101,11 @@ variable "openai_api_key" {
 # ------------------------------------------------------------------------------
 # SageMaker / Billing
 # ------------------------------------------------------------------------------
+# MODIFIED: Qwen2.5-7B-Instruct-AWQ for g4dn 16GB VRAM (FP16 needs ml.g5.xlarge)
 variable "sagemaker_model_id" {
-  description = "Hugging Face model ID for the SageMaker LLM endpoint"
+  description = "Hugging Face model ID for the SageMaker LLM endpoint (AWQ for ml.g4dn.xlarge)"
   type        = string
-  default     = "TheBloke/Mistral-7B-Instruct-v0.2-AWQ"
+  default     = "Qwen/Qwen2.5-7B-Instruct-AWQ"
 }
 
 variable "sagemaker_container_image" {
@@ -114,9 +115,28 @@ variable "sagemaker_container_image" {
 }
 
 variable "sagemaker_instance_type" {
-  description = "SageMaker endpoint instance type"
+  description = "SageMaker endpoint instance type (g4dn+AWQ default; use ml.g5.xlarge for FP16)"
   type        = string
   default     = "ml.g4dn.xlarge"
+}
+
+# MODIFIED: cu130 images require InferenceAmiVersion or container dies with no logs
+variable "sagemaker_inference_ami_version" {
+  description = "Required for huggingface-vllm cu130+ tags (HF/AWS guidance)"
+  type        = string
+  default     = "al2-ami-sagemaker-inference-gpu-3-1"
+}
+
+variable "sagemaker_max_model_len" {
+  description = "Optional vLLM max model length (empty = model default)"
+  type        = string
+  default     = "4096"
+}
+
+variable "sagemaker_gpu_memory_utilization" {
+  description = "vLLM GPU memory utilization fraction"
+  type        = string
+  default     = "0.90"
 }
 
 variable "deploy_sagemaker_model" {

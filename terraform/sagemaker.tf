@@ -128,9 +128,9 @@ resource "aws_iam_role_policy" "sagemaker_execution" {
         Resource = "arn:aws:ecr:${var.aws_region}:763104351884:repository/huggingface-vllm"
       },
       {
-        Sid    = "ECRAuthToken"
-        Effect = "Allow"
-        Action = "ecr:GetAuthorizationToken"
+        Sid      = "ECRAuthToken"
+        Effect   = "Allow"
+        Action   = "ecr:GetAuthorizationToken"
         Resource = "*"
       },
       {
@@ -230,11 +230,19 @@ resource "aws_sagemaker_model" "llm" {
     image          = var.sagemaker_container_image
     model_data_url = "s3://${aws_s3_bucket.model_artifacts.bucket}/models/${local.sagemaker_model_slug}/model.tar.gz"
 
-    environment = {
-      SM_NUM_GPUS   = "1"
-      SM_VLLM_MODEL = "/opt/ml/model"
-      HF_MODEL_ID   = var.sagemaker_model_id
-    }
+    # MODIFIED: load S3 artifacts at /opt/ml/model; do NOT set SM_VLLM_QUANTIZATION
+    # for pre-AWQ weights (let config.json / Marlin auto-detect). Optional len/util knobs.
+    environment = merge(
+      {
+        SM_NUM_GPUS                    = "1"
+        SM_VLLM_MODEL                  = "/opt/ml/model"
+        HF_MODEL_ID                    = var.sagemaker_model_id
+        SM_VLLM_GPU_MEMORY_UTILIZATION = var.sagemaker_gpu_memory_utilization
+      },
+      var.sagemaker_max_model_len != "" ? {
+        SM_VLLM_MAX_MODEL_LEN = var.sagemaker_max_model_len
+      } : {}
+    )
   }
 
   vpc_config {
@@ -256,6 +264,9 @@ resource "aws_sagemaker_endpoint_configuration" "llm" {
     initial_instance_count = 1
     instance_type          = var.sagemaker_instance_type
     initial_variant_weight = 1
+
+    # MODIFIED: mandatory for cu130 huggingface-vllm tags
+    inference_ami_version = var.sagemaker_inference_ami_version
 
     model_data_download_timeout_in_seconds            = 1200
     container_startup_health_check_timeout_in_seconds = 1200
