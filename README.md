@@ -180,6 +180,14 @@ Both services use `restart: unless-stopped`, so transient failures (e.g., a depe
 
 ---
 
+## Voice Pipeline Architecture
+
+To fulfill the requirements of reliable, low-latency STT/TTS in both English and Vietnamese (as per Sprint 2 demo requirements), we have elected to use **Groq and Gemini Cloud APIs** over AWS Transcribe/Polly.
+* **Why not AWS?** AWS lacks adequate support for Vietnamese conversational speech and TTS naturalness.
+* **Why Groq/Gemini?** Groq provides near-instantaneous inference speed, significantly reducing the `stt_ms` latency, while Gemini offers superior Vietnamese speech recognition and synthesis.
+
+---
+
 ## Verification & Testing Commands
 
 ### Check container health status
