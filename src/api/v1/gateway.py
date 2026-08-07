@@ -427,8 +427,17 @@ async def route_stt(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Uploaded audio file is empty.")
     
     transcript, stt_ms = await transcribe_audio_bytes(audio_content, filename=file.filename or "input_voice.mp3")
+    # --- START MODIFICATION ---
+    # Empty transcript = Google could not understand (not a server crash).
     if not transcript:
-        raise HTTPException(status_code=500, detail="Failed to transcribe audio query.")
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "STT could not understand the audio (silence, too short, or noisy). "
+                "Retry with a clearer utterance."
+            ),
+        )
+    # --- END MODIFICATION ---
         
     return SttResponse(transcript=transcript, latency_ms=stt_ms)
 

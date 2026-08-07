@@ -2,6 +2,26 @@
 
 This is the central orchestrator gateway for the **Traceable Voice Copilot** project. It serves as the middleware API connecting the **Cockpit UI (AAOS App)** to the speech services (STT/TTS) and the **KMS Core AI Engine**.
 
+## Table of Contents
+
+- [Technical Stack](#technical-stack)
+- [Inbound/Outbound Routing](#inboundoutbound-routing)
+- [Folder Structure](#folder-structure)
+- [Quick Start (Docker Compose)](#quick-start-docker-compose)
+  - [1. Configure the environment](#1-configure-the-environment)
+  - [2. Build and start the stack](#2-build-and-start-the-stack)
+  - [3. View logs](#3-view-logs)
+  - [4. Stop and clean up](#4-stop-and-clean-up)
+- [Local Development (without Docker)](#local-development-without-docker)
+- [Container Security & Architecture](#container-security--architecture)
+- [Health Checks & Startup Ordering](#health-checks--startup-ordering)
+- [Voice Pipeline Architecture](#voice-pipeline-architecture)
+  - [Query cache & latency headers (#16)](#query-cache--latency-headers-16)
+- [Verification & Testing Commands](#verification--testing-commands)
+- [API Endpoints](#api-endpoints)
+- [VHAL Mock Sender](#vhal-mock-sender)
+- [License](#license)
+
 ---
 
 ## Technical Stack

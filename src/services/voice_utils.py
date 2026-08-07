@@ -138,6 +138,7 @@ async def transcribe_audio_bytes(
         def run_sr():
             recognizer = sr.Recognizer()
             # Recognize using Google Web Speech API (Free, no key required)
+            # AudioFile expects PCM WAV (cockpit uploads audio/wav).
             with sr.AudioFile(io.BytesIO(audio_bytes)) as source:
                 audio_data = recognizer.record(source)
             return recognizer.recognize_google(audio_data, language="vi-VN")
@@ -148,10 +149,24 @@ async def transcribe_audio_bytes(
         print(f"[Google Free STT] Success! Transcribed: '{transcribed_text}' in {latency}ms")
         return transcribed_text, latency
 
+    # --- START MODIFICATION ---
+    # UnknownValueError has empty str(e) — log type so ops can tell silence vs outage.
     except Exception as e:
-        print(f"[Google Free STT Error]: {e}")
+        import speech_recognition as sr
+
         latency = int((time.perf_counter() - start_time) * 1000)
+        err_name = type(e).__name__
+        if isinstance(e, sr.UnknownValueError):
+            print(
+                f"[Google Free STT] {err_name}: no intelligible speech "
+                f"(bytes={len(audio_bytes)}, file={filename!r}) in {latency}ms"
+            )
+        elif isinstance(e, sr.RequestError):
+            print(f"[Google Free STT] {err_name}: API/network failure: {e} in {latency}ms")
+        else:
+            print(f"[Google Free STT Error] {err_name}: {e!r} (bytes={len(audio_bytes)})")
         return "", latency
+    # --- END MODIFICATION ---
 
 
 if __name__ == "__main__":
