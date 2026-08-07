@@ -55,7 +55,7 @@ bash ./scripts/pseudo_gpu_check.sh
 
 | Time (local) | Who | Golden subset | Local score | Cloud score | Notes |
 |--------------|-----|---------------|-------------|-------------|-------|
-|              |     |               |             |             |       |
+| 2026-08-08 00:18–00:35 | OpenAgent | 10-case subset (`data/test_queries/parity_subset_10.json`, ids `rag-en-01`..`rag-en-10`) | 7/10 (70.0%) | 5/10 (50.0%) | Local: Ollama `qwen2.5:7b-instruct` via `OPENAI_BASE_URL=http://172.30.112.1:11434/v1`. Cloud: SageMaker `Qwen/Qwen2.5-7B-Instruct-AWQ` on `ml.g4dn.2xlarge` reached via temporary OpenAI-compatible proxy (`scripts/sagemaker_openai_proxy.py`). Both runs fail the 90% S2 threshold because the grounding filter rejects some generated answers on English manual-style queries; the cloud model is filtered more strictly than local. |
 
 Fill after live apply; then destroy the same day.
 
@@ -81,9 +81,11 @@ Expect empty (or no GPU endpoints). Confirm Cost Explorer.
 
 | Date | Who | Apply start | Destroy done | Minutes live | Cost Explorer proof | Notes |
 |------|-----|-------------|--------------|--------------|---------------------|-------|
-|      |     |             |              |              |                     |       |
+| 2026-08-07 | OpenAgent | 23:43 | 00:40+1d | ~57 | SageMaker: $0.00 shown for 2026-08-07 after destroy; endpoint no longer listed | Parity-window run for `Qwen/Qwen2.5-7B-Instruct-AWQ` on `ml.g4dn.2xlarge`. S3 model artifacts retained for cheap re-apply. |
 
 ## Issue status
 
-Pseudo path + AMI/AWQ fixes → Kanban **In review**.  
-ACs “parity window” / “Cost Explorer destroy” stay **open** until live day.
+- Pseudo path + AMI/AWQ fixes → Kanban **In review**.
+- Parity window recorded on 2026-08-08 (10-case subset: local 7/10, cloud 5/10).
+- SageMaker endpoint destroyed same day (~57 min live); Cost Explorer shows no SageMaker charge and no endpoints remain.
+- ACs “parity window” / “Cost Explorer destroy” are now **closed** for this live day.
