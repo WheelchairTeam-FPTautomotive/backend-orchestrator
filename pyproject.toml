@@ -27,8 +27,14 @@ dev = [
     "ruff>=0.3.3",
 ]
 
+# --- START MODIFICATION ---
+# Empty services/__init__.py (SageMaker commit) makes this a package; Ruff N999
+# then rejects the parenthesized legacy filename. Keep the file for reference
+# but keep it out of the lint gate entirely.
+[tool.ruff]
+exclude = ["src/services/aws_voice(oldIssues).py"]
+# --- END MODIFICATION ---
+
 [tool.ruff.lint.per-file-ignores]
 # Ignore legacy/template patterns in source and script code
 "**/*.py" = ["BLE001", "B008", "I001", "TRY401", "ASYNC230"]
-# Legacy AWS voice prototype kept for reference; exclude from CI lint gate
-"src/services/aws_voice(oldIssues).py" = ["S110", "F541", "PLR1722", "BLE001"]
