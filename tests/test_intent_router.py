@@ -1,7 +1,8 @@
-"""Intent router collision / tone-free matrix for pattern-gate hardening."""
+"""Intent router collision / tone-free matrix + #20 ambiguous disambiguation."""
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -9,7 +10,17 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from services.intent_router import classify_intent_fast, _fold_vi
+from services.car_controller import get_command_id
+from services.intent_router import classify_intent_fast, normalize_utterance, _fold_vi
+from services.text_norm import normalize_utterance as normalize_alias
+
+FIXTURES = (
+    Path(__file__).resolve().parent / "fixtures" / "ambiguous_intent_cases.json"
+)
+
+
+def _load_ambiguous() -> list[dict]:
+    return json.loads(FIXTURES.read_text(encoding="utf-8"))
 
 
 @pytest.mark.parametrize(
@@ -51,3 +62,32 @@ def test_classify_intent_fast_matrix(query: str, expected: str) -> None:
 def test_fold_vi_maps_d_stroke() -> None:
     assert _fold_vi("đóng đèn") == "dong den"
     assert _fold_vi("Điều hòa") == "dieu hoa"
+    assert normalize_utterance("Mở cửa") == "mo cua"
+    assert normalize_alias("Mở cửa") == "mo cua"
+
+
+@pytest.mark.parametrize("case", _load_ambiguous(), ids=lambda c: c["id"])
+def test_ambiguous_intent_fixtures(case: dict) -> None:
+    """#20 DoD: ambiguous free-talk vs car-control + clean EN door."""
+    utterance = case["utterance"]
+    expected_intent = case["expected_intent"]
+    expected_cmd = case.get("expected_command_id")
+
+    normalized = normalize_utterance(utterance)
+    intent, ms = classify_intent_fast(utterance, normalized=normalized)
+    assert intent == expected_intent, (
+        f"{case['id']}: {utterance!r} -> {intent} (want {expected_intent}); "
+        f"fold={normalized!r}"
+    )
+    assert ms < 50, f"classify too slow: {ms}ms"
+
+    if expected_cmd:
+        cmd = get_command_id(utterance, normalized=normalized)
+        assert cmd == expected_cmd, (
+            f"{case['id']}: command_id={cmd} want {expected_cmd}"
+        )
+
+
+def test_hvac_on_command_id_tone_free() -> None:
+    assert get_command_id("bat dieu hoa") == "HVAC_ON"
+    assert get_command_id("Bật điều hòa") == "HVAC_ON"

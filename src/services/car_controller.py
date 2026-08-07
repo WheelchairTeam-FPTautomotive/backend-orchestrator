@@ -1,6 +1,9 @@
 import re
 from enum import Enum
 
+from services.text_norm import normalize_utterance
+
+
 class CommandID(str, Enum):
     DOOR_OPEN = "DOOR_OPEN"
     DOOR_CLOSE = "DOOR_CLOSE"
@@ -12,38 +15,48 @@ class CommandID(str, Enum):
     HVAC_OFF = "HVAC_OFF"
     GENERIC_CONTROL = "GENERIC_CONTROL"
 
-# Centralized Mapping: (Pattern, Command ID)
-COMMAND_CONTRACTS = [
-    # Door Controls
-    (r"mở.*cửa|open.*door", CommandID.DOOR_OPEN),
-    (r"đóng.*cửa|close.*door", CommandID.DOOR_CLOSE),
-    # Music & Volume Controls
-    (r"bật.*nhạc|phát.*nhạc|play.*music", CommandID.MUSIC_PLAY),
-    (r"tắt.*nhạc|dừng.*nhạc|pause.*music|stop.*music", CommandID.MUSIC_PAUSE),
-    (r"tăng.*âm lượng|to lên|volume up", CommandID.VOLUME_UP),
-    (r"giảm.*âm lượng|nhỏ đi|volume down", CommandID.VOLUME_DOWN),
-    # HVAC Controls
-    (r"bật.*điều hòa|mở.*điều hòa|ac on|hvac on", CommandID.HVAC_ON),
-    (r"tắt.*điều hòa|ac off|hvac off", CommandID.HVAC_OFF),
-]
 
-# Pre-compile regexes for optimal execution performance
+# Patterns assume normalize_utterance() was applied (tone-free VI + lowercase).
+# --- START MODIFICATION ---
+COMMAND_CONTRACTS = [
+    # Door / window (window mocked as DOOR_OPEN for Sprint 2 cockpit)
+    (
+        r"mo\s*.*cua|open\s*.*door|open\s*.*window|open\s+it(?:\s+now)?\b",
+        CommandID.DOOR_OPEN,
+    ),
+    (r"dong\s*.*cua|close\s*.*door|close\s*.*window", CommandID.DOOR_CLOSE),
+    # Music & volume
+    (r"bat\s*.*nhac|phat\s*.*nhac|play\s*.*music", CommandID.MUSIC_PLAY),
+    (
+        r"tat\s*.*nhac|dung\s*.*nhac|pause\s*.*music|stop\s*.*music",
+        CommandID.MUSIC_PAUSE,
+    ),
+    (r"tang\s*.*am\s*luong|to\s+len|volume\s+up", CommandID.VOLUME_UP),
+    (r"giam\s*.*am\s*luong|nho\s+di|volume\s+down", CommandID.VOLUME_DOWN),
+    # HVAC
+    (r"bat\s*.*dieu\s*hoa|mo\s*.*dieu\s*hoa|\bac\s+on\b|\bhvac\s+on\b", CommandID.HVAC_ON),
+    (r"tat\s*.*dieu\s*hoa|\bac\s+off\b|\bhvac\s+off\b", CommandID.HVAC_OFF),
+]
+# --- END MODIFICATION ---
+
 COMPILED_CONTRACTS = [
     (re.compile(pattern, re.IGNORECASE), cmd_id)
     for pattern, cmd_id in COMMAND_CONTRACTS
 ]
 
-DEFAULT_COMMAND_ID = "GENERIC_CONTROL"
+DEFAULT_COMMAND_ID = CommandID.GENERIC_CONTROL.value
 
 
-def get_command_id(query: str) -> str:
-    """Parses a car control query to return a standardized command ID contract.
+def get_command_id(query: str, *, normalized: str | None = None) -> str:
+    """Return command ID contract for cockpit mock actuation.
 
-    This contract is shared with the Android Cockpit UI for mocking
-    animations.
+    Always matches against normalized text (ingress fold) to avoid
+    diacritic / casing drift vs the intent router.
     """
+    # --- START MODIFICATION ---
+    text = normalized if normalized is not None else normalize_utterance(query)
     for pattern, cmd_id in COMPILED_CONTRACTS:
-        if pattern.search(query):
-            return cmd_id
-
+        if pattern.search(text):
+            return cmd_id.value
     return DEFAULT_COMMAND_ID
+    # --- END MODIFICATION ---

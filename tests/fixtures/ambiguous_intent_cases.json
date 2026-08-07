@@ -1,0 +1,65 @@
+[
+  {
+    "id": "amb-01",
+    "utterance": "thanks, now open the door",
+    "expected_intent": "CAR_CONTROL",
+    "expected_command_id": "DOOR_OPEN",
+    "notes": "Mid-chat free-talk cue then control"
+  },
+  {
+    "id": "amb-02",
+    "utterance": "hey, play music",
+    "expected_intent": "CAR_CONTROL",
+    "expected_command_id": "MUSIC_PLAY",
+    "notes": "Greeting cue + music control"
+  },
+  {
+    "id": "amb-03",
+    "utterance": "xin chao, mo cua",
+    "expected_intent": "CAR_CONTROL",
+    "expected_command_id": "DOOR_OPEN",
+    "notes": "Tone-free VI greeting + door"
+  },
+  {
+    "id": "amb-03b",
+    "utterance": "Xin chào, mở cửa giúp tôi",
+    "expected_intent": "CAR_CONTROL",
+    "expected_command_id": "DOOR_OPEN",
+    "notes": "Accented VI greeting + door"
+  },
+  {
+    "id": "amb-04",
+    "utterance": "how long should I run HVAC",
+    "expected_intent": "RAG_SEARCH",
+    "expected_command_id": null,
+    "notes": "Advice/duration → manuals not hardware"
+  },
+  {
+    "id": "amb-05",
+    "utterance": "Should I open the window if it's hot? Open it now.",
+    "expected_intent": "CAR_CONTROL",
+    "expected_command_id": "DOOR_OPEN",
+    "notes": "Compound: advice clause + trailing imperative → Direct Control wins"
+  },
+  {
+    "id": "clean-01",
+    "utterance": "Hey Car, open the door",
+    "expected_intent": "CAR_CONTROL",
+    "expected_command_id": "DOOR_OPEN",
+    "notes": "Clean EN demo utterance"
+  },
+  {
+    "id": "clean-01b",
+    "utterance": "open the door",
+    "expected_intent": "CAR_CONTROL",
+    "expected_command_id": "DOOR_OPEN",
+    "notes": "Bare EN door"
+  },
+  {
+    "id": "clean-02",
+    "utterance": "mo cua",
+    "expected_intent": "CAR_CONTROL",
+    "expected_command_id": "DOOR_OPEN",
+    "notes": "Tone-free VI door must not be GENERIC_CONTROL"
+  }
+]

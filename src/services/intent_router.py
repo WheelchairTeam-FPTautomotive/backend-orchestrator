@@ -1,14 +1,17 @@
 import re
 import time
-import unicodedata
 
 from dotenv import load_dotenv
 
 from services import sagemaker_client
+from services.car_controller import DEFAULT_COMMAND_ID, get_command_id
+from services.text_norm import normalize_utterance
 
 # Load environment variables from .env
 load_dotenv()
 
+# Re-export for tests / callers
+_fold_vi = normalize_utterance
 
 CAR_CONTROL_REGEX = (
     r"\b(bat|tat|mo|dong|tang|giam|chinh|keo|len|xuong|gap)\b.*"
@@ -20,7 +23,6 @@ RAG_SEARCH_REGEX = (
     r"kiem tra|hong|nguyen nhan|tai sao|bao duong|thay the|quy trinh|bao ve|"
     r"manual|how to|how do|dac ta|thong so|he thong)\b"
 )
-# Greetings + bounded off-domain. Matched AFTER CAR/RAG to avoid intent collisions.
 FREE_TALK_REGEX = (
     r"(?:^|\b)("
     r"xin chao|chao buoi|chao|"
@@ -37,10 +39,9 @@ FREE_TALK_REGEX = (
     r")\b"
 )
 
-# Advice/duration cues: CAR match + these => RAG (manual how-long), not hardware stub
+# Advice/duration cues: alone with control vocab => RAG (manual), not hardware
 CAR_ADVICE_REGEX = r"\b(bao lau|how long|should i|bao nhieu)\b|\bnen\b"
 
-# Doc/tech tokens — block short chitchat heuristic from swallowing these
 RAG_DOC_TOKEN_REGEX = (
     r"\b(p0\d{3}|ma loi|ap suat|lop|pdf|hvac|aeb|adas|pontis|tachonet|"
     r"gaia|evla|peppol|keepass|ertms|manual|light-control|hoat dong|"
@@ -48,19 +49,19 @@ RAG_DOC_TOKEN_REGEX = (
 )
 
 
-def _fold_vi(text: str) -> str:
-    """Lowercase + strip Vietnamese diacritics. Explicitly map đ/Đ → d."""
+def _has_trailing_imperative(normalized: str) -> bool:
+    """True when a later clause is a direct control command (compound utterances)."""
     # --- START MODIFICATION ---
-    lowered = text.lower().strip()
-    lowered = lowered.replace("đ", "d").replace("Đ", "d")
-    nfd = unicodedata.normalize("NFD", lowered)
-    return "".join(c for c in nfd if unicodedata.category(c) != "Mn")
+    parts = [p.strip() for p in re.split(r"[?.!]+", normalized) if p.strip()]
+    if len(parts) < 2:
+        return False
+    return get_command_id(parts[-1], normalized=parts[-1]) != DEFAULT_COMMAND_ID
     # --- END MODIFICATION ---
 
 
 def classify_intent_by_regex(text: str) -> str:
     """Fast rule-based classifier. Checked before hitting the LLM."""
-    folded = _fold_vi(text)
+    folded = normalize_utterance(text)
 
     if re.search(CAR_CONTROL_REGEX, folded):
         return "CAR_CONTROL"
@@ -71,22 +72,35 @@ def classify_intent_by_regex(text: str) -> str:
     if re.search(FREE_TALK_REGEX, folded):
         return "FREE_TALK"
 
-    # Legacy slow-path default
     return "FREE_TALK"
 
 
-def classify_intent_fast(query: str) -> tuple[str, int]:
+def classify_intent_fast(
+    query: str, *, normalized: str | None = None
+) -> tuple[str, int]:
     """
     Production hot-path classifier: regex only, no LLM round-trip.
-    Order: CAR (->RAG if advice) -> RAG/doc-tokens -> FREE_TALK -> short chitchat -> default RAG.
+
+    Precedence (locked #20):
+      Direct control (known command_id) > RAG heuristics > Free talk
+    Advice hybrid (should i / bao lau) stays RAG unless a trailing imperative
+    control clause is present (compound utterances).
     """
     start_time = time.perf_counter()
-    folded = _fold_vi(query)
+    folded = normalized if normalized is not None else normalize_utterance(query)
 
     # --- START MODIFICATION ---
-    if re.search(CAR_CONTROL_REGEX, folded):
-        # Hybrid advice ("bao lau", "nen ...") stays on manuals, not hardware stub
-        if re.search(CAR_ADVICE_REGEX, folded):
+    # 1) Direct control via shared command contract (single source of truth)
+    cmd_id = get_command_id(folded, normalized=folded)
+    if cmd_id != DEFAULT_COMMAND_ID:
+        if re.search(CAR_ADVICE_REGEX, folded) and not _has_trailing_imperative(folded):
+            intent = "RAG_SEARCH"
+        else:
+            intent = "CAR_CONTROL"
+    elif re.search(CAR_CONTROL_REGEX, folded):
+        # Legacy VI verb/object CAR without a mapped command_id → still CAR
+        # (gateway will warn on GENERIC_CONTROL)
+        if re.search(CAR_ADVICE_REGEX, folded) and not _has_trailing_imperative(folded):
             intent = "RAG_SEARCH"
         else:
             intent = "CAR_CONTROL"
@@ -106,7 +120,6 @@ def classify_intent_fast(query: str) -> tuple[str, int]:
     return intent, latency
 
 
-
 def classify_intent(query: str) -> tuple[str, int]:
     """
     Classifies intent using regex first.
@@ -118,15 +131,12 @@ def classify_intent(query: str) -> tuple[str, int]:
     """
     start_time = time.perf_counter()
 
-    # 1. Fast Path: Check Regex First
     intent = classify_intent_by_regex(query)
 
-    # If Regex identifies a specific action, return it immediately
     if intent != "FREE_TALK":
         latency = int((time.perf_counter() - start_time) * 1000)
         return intent, latency
 
-    # 2. Slow Path: Fallback to the dedicated SageMaker LLM endpoint
     intent = sagemaker_client.classify_intent_with_sagemaker(query)
 
     latency_ms = int((time.perf_counter() - start_time) * 1000)
@@ -135,16 +145,17 @@ def classify_intent(query: str) -> tuple[str, int]:
 
 if __name__ == "__main__":
     print("=== Testing Intent Classifier Service ===")
-    
+
     test_queries = [
-        "Bật đèn pha cho tôi",                                          # Expected: CAR_CONTROL
-        "Làm cách nào để bật hệ thống điều hòa HVAC trên buồng lái?",   # Expected: RAG_SEARCH
-        "Xin chào, bạn khỏe không?",                                    # Expected: FREE_TALK
-        "Làm sao để thay lốp xe bị thủng?",                             # Expected: RAG_SEARCH
-        "Tăng âm lượng nhạc lên chút nhé",                              # Expected: CAR_CONTROL
+        "Bật đèn pha cho tôi",
+        "Làm cách nào để bật hệ thống điều hòa HVAC trên buồng lái?",
+        "Xin chào, bạn khỏe không?",
+        "Làm sao để thay lốp xe bị thủng?",
+        "Tăng âm lượng nhạc lên chút nhé",
+        "Hey Car, open the door",
     ]
-    
+
     for q in test_queries:
-        intent_result, ms = classify_intent(q)
+        intent_result, ms = classify_intent_fast(q)
         print(f"Query: '{q}'")
         print(f"-> Intent: {intent_result} (Latency: {ms}ms)\n")

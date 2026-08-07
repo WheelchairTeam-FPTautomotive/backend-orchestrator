@@ -91,6 +91,8 @@ docker compose down -v
 
 Once the stack is healthy, the gateway is available at `http://localhost:8000` and the core AI engine at `http://localhost:8001`.
 
+**Interactive API docs (Swagger / OpenAPI):** [http://localhost:8000/docs](http://localhost:8000/docs) · ReDoc: [http://localhost:8000/redoc](http://localhost:8000/redoc)
+
 ---
 
 ## Local Development (without Docker)
@@ -186,6 +188,29 @@ To fulfill the requirements of reliable, low-latency STT/TTS in both English and
 * **Why not AWS?** AWS lacks adequate support for Vietnamese conversational speech and TTS naturalness.
 * **Why Groq/Gemini?** Groq provides near-instantaneous inference speed, significantly reducing the `stt_ms` latency, while Gemini offers superior Vietnamese speech recognition and synthesis.
 
+**Intent routing (free-talk vs car-control):** see [`docs/intent_routing.md`](docs/intent_routing.md) — ingress normalize, Direct Control via `get_command_id`, Phase 1 classify target **&lt;5ms** (no SageMaker on hot path).
+
+### Query cache & latency headers (#16)
+
+* **Storage:** in-process `cachetools.TTLCache` (`maxsize=1000`, TTL from `QUERY_CACHE_TTL_S`, default **60s**; `0` disables).
+* **Key:** `sha256(normalized_query):language:intent` — VI/EN and intent classes never share entries.
+* **Payload:** text-query cache stores JSON without `audio_base64` (avoids RAM bloat).
+* **Bypass:** request header `X-Cache-Bypass: 1` (or `QUERY_CACHE_TTL_S=0`) for golden/benchmarks.
+* **Telemetry:** response headers `X-Cache-Status` (`HIT`|`MISS`|`BYPASS`) and `X-Latency-*-Ms`; JSON body `latency` kept for cockpit developer footer.
+
+```bash
+# Second identical VI call should show X-Cache-Status: HIT
+curl -i -X POST http://localhost:8000/api/v1/copilot/query \
+  -H "Content-Type: application/json" \
+  -d '{"query":"Làm sao để kiểm tra phanh?","language":"vi"}'
+
+# Force fresh Core AI (no cache lookup/store)
+curl -i -X POST http://localhost:8000/api/v1/copilot/query \
+  -H "Content-Type: application/json" \
+  -H "X-Cache-Bypass: 1" \
+  -d '{"query":"Làm sao để kiểm tra phanh?","language":"vi"}'
+```
+
 ---
 
 ## Verification & Testing Commands
@@ -238,7 +263,7 @@ curl -X POST http://localhost:8000/api/v1/copilot/query \
 
 ### 1. `POST /api/v1/copilot/query`
 
-Main query entrypoint. Accepts text, forwards the request to the RAG Core AI (`http://localhost:8001/api/v1/search`), and returns the grounded answer and source citation array.
+Main query entrypoint. Accepts text + `language` (`vi`|`en`), classifies intent, then RAG / car-control. Short-TTL language-aware cache; see **Query cache & latency headers** above. Explore schemas and try-it-out at `/docs`.
 
 ### 2. `POST /api/v1/copilot/voice-query`
 

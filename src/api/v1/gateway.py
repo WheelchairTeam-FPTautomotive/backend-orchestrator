@@ -1,17 +1,105 @@
+from __future__ import annotations
+
 from typing import Literal
 
 import time
-from fastapi import APIRouter, HTTPException, UploadFile, File, Request, Form
+from fastapi import APIRouter, HTTPException, UploadFile, File, Request, Form, Header
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 import httpx
 import os
 import logging
 from services.voice_utils import transcribe_audio_bytes, synthesize_speech_bytes
 from services.intent_router import classify_intent_fast
-from services.car_controller import get_command_id
+from services.car_controller import DEFAULT_COMMAND_ID, get_command_id
+from services.text_norm import normalize_utterance
+from services.query_cache import QueryCache, query_cache
 import base64
 
 logger = logging.getLogger("backend.orchestrator.gateway")
+
+CACHE_BYPASS_HEADER = "X-Cache-Bypass"
+
+
+def _latency_header_map(
+    *,
+    stt_ms: int = 0,
+    core_ai_ms: int = 0,
+    tts_ms: int = 0,
+    total_ms: int = 0,
+    intent_ms: int = 0,
+    cache_status: str,
+) -> dict[str, str]:
+    # --- START MODIFICATION ---
+    return {
+        "X-Latency-STT-Ms": str(stt_ms),
+        "X-Latency-Core-AI-Ms": str(core_ai_ms),
+        "X-Latency-TTS-Ms": str(tts_ms),
+        "X-Latency-Total-Ms": str(total_ms),
+        "X-Latency-Intent-Ms": str(intent_ms),
+        "X-Cache-Status": cache_status,
+    }
+    # --- END MODIFICATION ---
+
+
+def _json_with_headers(payload: QueryResponse | dict, headers: dict[str, str]) -> JSONResponse:
+    body = payload.model_dump() if isinstance(payload, BaseModel) else payload
+    return JSONResponse(content=body, headers=headers)
+
+
+def _should_bypass_cache(request: Request, x_cache_bypass: str | None = None) -> bool:
+    if not query_cache.enabled:
+        return True
+    raw = (x_cache_bypass if x_cache_bypass is not None else request.headers.get(CACHE_BYPASS_HEADER, ""))
+    return str(raw).strip() == "1"
+
+
+def _cached_query_response(
+    *,
+    cached: dict,
+    raw_utterance: str,
+    intent_ms: int,
+    total_start: float,
+) -> JSONResponse:
+    # --- START MODIFICATION ---
+    total_ms = int((time.perf_counter() - total_start) * 1000)
+    lat = cached.get("latency") or {}
+    body = QueryResponse(
+        query=cached.get("query", raw_utterance),
+        answer=cached.get("answer", ""),
+        audio_base64=None,
+        command_id=cached.get("command_id"),
+        citations=cached.get("citations") or [],
+        status=cached.get("status", "success"),
+        latency=LatencyMetrics(
+            stt_ms=0,
+            core_ai_ms=0,
+            tts_ms=int(lat.get("tts_ms") or 0),
+            total_ms=total_ms,
+        ),
+    )
+    headers = _latency_header_map(
+        intent_ms=intent_ms,
+        tts_ms=body.latency.tts_ms if body.latency else 0,
+        total_ms=total_ms,
+        cache_status="HIT",
+    )
+    logger.info(f"[Gateway] cache=HIT total_ms={total_ms}")
+    return _json_with_headers(body, headers)
+    # --- END MODIFICATION ---
+
+
+def _route_car_control(raw_utterance: str, normalized: str, language: str) -> dict:
+    """Resolve command_id on normalized text; warn when unmapped GENERIC."""
+    # --- START MODIFICATION ---
+    cmd_id = get_command_id(raw_utterance, normalized=normalized)
+    if cmd_id == DEFAULT_COMMAND_ID:
+        logger.warning(
+            "intent=CAR_CONTROL command_id=GENERIC_CONTROL "
+            f"utterance={raw_utterance!r} normalized={normalized!r}"
+        )
+    return _car_control_response(raw_utterance, command_id=cmd_id, language=language)
+    # --- END MODIFICATION ---
 
 router = APIRouter(prefix="/api/v1")
 
@@ -129,37 +217,120 @@ class TtsResponse(BaseModel):
 # ==========================================
 # Router Endpoints
 # ==========================================
-@router.get("/health")
+@router.get(
+    "/health",
+    tags=["health"],
+    summary="Gateway health",
+)
 async def gateway_health():
     return {"status": "ok", "service": "backend-orchestrator-gateway"}
 
 
-@router.post("/copilot/query", response_model=QueryResponse)
-async def route_text_query(payload: QueryRequest, request: Request):
-    intent, intent_ms = classify_intent_fast(payload.query)
+@router.post(
+    "/copilot/query",
+    response_model=QueryResponse,
+    tags=["copilot"],
+    summary="Typed copilot query (language-aware cache)",
+    description=(
+        "Routes text through intent classification then Core AI RAG or car-control. "
+        "Short-TTL in-process cache keyed by normalized query + language + intent. "
+        "Send header `X-Cache-Bypass: 1` (or set QUERY_CACHE_TTL_S=0) for golden/benchmarks. "
+        "Response headers: X-Cache-Status, X-Latency-*-Ms. JSON `latency` kept for cockpit."
+    ),
+    responses={
+        200: {
+            "headers": {
+                "X-Cache-Status": {
+                    "description": "HIT | MISS | BYPASS",
+                    "schema": {"type": "string"},
+                },
+                "X-Latency-Total-Ms": {
+                    "description": "End-to-end gateway time in ms",
+                    "schema": {"type": "string"},
+                },
+                "X-Latency-Core-AI-Ms": {
+                    "description": "Upstream Core AI time in ms (0 on HIT/CAR)",
+                    "schema": {"type": "string"},
+                },
+                "X-Latency-TTS-Ms": {
+                    "description": "TTS time in ms",
+                    "schema": {"type": "string"},
+                },
+                "X-Latency-Intent-Ms": {
+                    "description": "Intent classify time in ms",
+                    "schema": {"type": "string"},
+                },
+                "X-Latency-STT-Ms": {
+                    "description": "STT time in ms (0 on text query)",
+                    "schema": {"type": "string"},
+                },
+            }
+        }
+    },
+)
+async def route_text_query(
+    payload: QueryRequest,
+    request: Request,
+    x_cache_bypass: str | None = Header(
+        default=None,
+        alias="X-Cache-Bypass",
+        description="Set to `1` to skip cache lookup/store (golden eval / benchmarks).",
+    ),
+):
+    # --- START MODIFICATION ---
+    # Ingress normalize once; language-aware cache + latency headers (#16).
+    total_start = time.perf_counter()
+    raw_utterance = payload.query
+    normalized = normalize_utterance(raw_utterance)
+    intent, intent_ms = classify_intent_fast(raw_utterance, normalized=normalized)
     mode = _core_ai_mode_for_intent(intent)
     language = payload.language or "vi"
+    bypass = _should_bypass_cache(request, x_cache_bypass)
+    cache_key = QueryCache.make_key(normalized, language, intent)
+
     logger.info(
         f"[Gateway] intent={intent} ({intent_ms}ms) mode={mode} "
-        f"language={language} query='{payload.query}'"
+        f"language={language} bypass={bypass} query={raw_utterance!r} "
+        f"normalized={normalized!r}"
     )
 
+    if not bypass:
+        cached = query_cache.get(cache_key)
+        if cached is not None:
+            return _cached_query_response(
+                cached=cached,
+                raw_utterance=raw_utterance,
+                intent_ms=intent_ms,
+                total_start=total_start,
+            )
+
     if intent == "CAR_CONTROL":
-        cmd_id = get_command_id(payload.query)
-        data = _car_control_response(payload.query, command_id=cmd_id, language=language)
-        return QueryResponse(
+        data = _route_car_control(raw_utterance, normalized, language)
+        total_ms = int((time.perf_counter() - total_start) * 1000)
+        body = QueryResponse(
             query=data["query"],
             answer=data["answer"],
             command_id=data["command_id"],
             citations=data["citations"],
             status=data["status"],
-            latency=None,
+            latency=LatencyMetrics(
+                stt_ms=0,
+                core_ai_ms=0,
+                tts_ms=0,
+                total_ms=total_ms,
+            ),
         )
+        headers = _latency_header_map(
+            intent_ms=intent_ms,
+            total_ms=total_ms,
+            cache_status="BYPASS" if bypass else "MISS",
+        )
+        if not bypass:
+            query_cache.set(cache_key, body.model_dump())
+        logger.info(f"[Gateway] cache={headers['X-Cache-Status']} total_ms={total_ms}")
+        return _json_with_headers(body, headers)
 
     try:
-        # --- START MODIFICATION ---
-        # Stage timings for cockpit developer-mode footer (additive; clients may ignore)
-        total_start = time.perf_counter()
         client: httpx.AsyncClient = request.app.state.http_client
         core_ai_start = time.perf_counter()
         response = await client.post(
@@ -187,7 +358,7 @@ async def route_text_query(payload: QueryRequest, request: Request):
         audio_b64 = base64.b64encode(audio_bytes).decode("utf-8") if audio_bytes else None
         total_ms = int((time.perf_counter() - total_start) * 1000)
 
-        return QueryResponse(
+        body = QueryResponse(
             query=data.get("query", payload.query),
             answer=answer_text,
             audio_base64=audio_b64,
@@ -200,13 +371,35 @@ async def route_text_query(payload: QueryRequest, request: Request):
                 total_ms=total_ms,
             ),
         )
+        cache_status = "BYPASS" if bypass else "MISS"
+        if not bypass and body.status in {"success", "not_found", "refused"}:
+            query_cache.set(cache_key, body.model_dump())
+        headers = _latency_header_map(
+            core_ai_ms=core_ai_ms,
+            tts_ms=tts_ms,
+            intent_ms=intent_ms,
+            total_ms=total_ms,
+            cache_status=cache_status,
+        )
+        logger.info(
+            f"[Gateway] cache={cache_status} core_ai_ms={core_ai_ms} "
+            f"tts_ms={tts_ms} total_ms={total_ms}"
+        )
+        return _json_with_headers(body, headers)
         # --- END MODIFICATION ---
 
     # --- START MODIFICATION ---
     # Soft timeout: demosafe 200 instead of raw 504
     except httpx.TimeoutException as e:
         logger.exception(f"[Gateway] Timeout connecting to Core AI: {e}")
-        return _timeout_soft_response(payload.query, language=language)
+        soft = _timeout_soft_response(payload.query, language=language)
+        total_ms = int((time.perf_counter() - total_start) * 1000)
+        headers = _latency_header_map(
+            intent_ms=intent_ms,
+            total_ms=total_ms,
+            cache_status="BYPASS",
+        )
+        return _json_with_headers(soft, headers)
 
     except httpx.RequestError as e:
         logger.exception(f"[Gateway] Request failed connecting to Core AI: {e}")
@@ -221,13 +414,13 @@ class SttResponse(BaseModel):
     transcript: str
     latency_ms: int
 
-@router.post("/copilot/tts", response_model=TtsResponse)
+@router.post("/copilot/tts", response_model=TtsResponse, tags=["voice"], summary="Text-to-speech")
 async def route_tts(request: TtsRequest):
     audio_bytes, latency = await synthesize_speech_bytes(request.text, language=request.language, force_edge_tts=True)
     base64_str = base64.b64encode(audio_bytes).decode("utf-8") if audio_bytes else None
     return TtsResponse(audio_base64=base64_str, latency_ms=latency)
 
-@router.post("/copilot/stt", response_model=SttResponse)
+@router.post("/copilot/stt", response_model=SttResponse, tags=["voice"], summary="Speech-to-text")
 async def route_stt(file: UploadFile = File(...)):
     audio_content = await file.read()
     if not audio_content:
@@ -239,7 +432,12 @@ async def route_stt(file: UploadFile = File(...)):
         
     return SttResponse(transcript=transcript, latency_ms=stt_ms)
 
-@router.post("/copilot/voice-query", response_model=VoiceQueryResponse)
+@router.post(
+    "/copilot/voice-query",
+    response_model=VoiceQueryResponse,
+    tags=["voice"],
+    summary="Voice upload → STT → intent → RAG/control → TTS",
+)
 async def route_voice_query(request: Request, file: UploadFile = File(...), language: str = Form("vi")):
     total_start = time.perf_counter()
     logger.info(f"[Gateway] Received voice query file: name={file.filename}")
@@ -257,18 +455,19 @@ async def route_voice_query(request: Request, file: UploadFile = File(...), lang
         )
     
     core_ai_start = time.perf_counter()
-    intent, intent_ms = classify_intent_fast(transcript)
+    # --- START MODIFICATION ---
+    raw_utterance = transcript
+    normalized = normalize_utterance(raw_utterance)
+    intent, intent_ms = classify_intent_fast(raw_utterance, normalized=normalized)
     mode = _core_ai_mode_for_intent(intent)
-    # Use parsed language from form
     logger.info(
-        f"[Gateway] voice intent={intent} ({intent_ms}ms) mode={mode} transcript='{transcript}'"
+        f"[Gateway] voice intent={intent} ({intent_ms}ms) mode={mode} "
+        f"transcript={raw_utterance!r} normalized={normalized!r}"
     )
 
     try:
         if intent == "CAR_CONTROL":
-            cmd_id = get_command_id(transcript)
-            data = _car_control_response(transcript, command_id=cmd_id, language=language)
-            # Make sure Voice flow also returns the command_id in the end
+            data = _route_car_control(raw_utterance, normalized, language)
         else:
             client: httpx.AsyncClient = request.app.state.http_client
             response = await client.post(
