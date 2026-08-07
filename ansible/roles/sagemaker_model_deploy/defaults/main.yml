@@ -7,8 +7,8 @@
 # for pre-AWQ weights. Local Ollama freeze: qwen2.5:7b-instruct (behavior parity).
 sagemaker_model_id: "Qwen/Qwen2.5-7B-Instruct-AWQ"
 sagemaker_model_slug: "{{ sagemaker_model_id | split('/') | last | regex_replace('[^0-9a-zA-Z]', '-') | lower }}"
-sagemaker_container_image: "763104351884.dkr.ecr.ap-southeast-2.amazonaws.com/huggingface-vllm:0.25.1-transformers5.10-gpu-py312-cu130-ubuntu22.04"
-sagemaker_instance_type: "ml.g4dn.xlarge"
+sagemaker_container_image: "763104351884.dkr.ecr.ap-southeast-2.amazonaws.com/huggingface-vllm:0.25.1-transformers5.10.2-gpu-py312-cu130-ubuntu22.04"
+sagemaker_instance_type: "ml.g4dn.2xlarge"
 sagemaker_inference_ami_version: "al2-ami-sagemaker-inference-gpu-3-1"
 sagemaker_instance_type_family: "{{ sagemaker_instance_type.split('.')[1] }}"
 
@@ -30,9 +30,14 @@ terraform_dir: "{{ playbook_dir }}/../../terraform"
 terraform_command: terraform.exe
 aws_cli_command: aws.exe
 
+# AWS profile used for S3/SageMaker CLI and Terraform calls.
+# Configure this profile in ~/.aws/credentials with an access key for the
+# Team-Wheelchair IAM user. No credentials are stored in this repository.
+aws_profile: default
+
 # Pre-existing SageMaker execution role ARN.
-# Terraform will create the role only when this is left empty. Because the
-# hackathon IAM user lacks iam:CreateRole, provide an ARN here.
+# Leave this empty to let Terraform create the SageMaker execution role.
+# Set this only if you want to use an externally-managed role.
 sagemaker_execution_role_arn: ""
 
 # Teardown confirmation guard

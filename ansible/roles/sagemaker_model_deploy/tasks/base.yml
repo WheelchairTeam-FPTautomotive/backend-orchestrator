@@ -7,10 +7,10 @@
 - name: Apply Terraform base layer
   ansible.builtin.command:
     cmd: >
+      powershell.exe -File "C:\Users\admin\.aws\run-aws.ps1"
       {{ terraform_command }} apply
       -var=deploy_sagemaker_model=false
       -var=aws_region={{ aws_region }}
-      -var=sagemaker_execution_role_arn={{ sagemaker_execution_role_arn }}
       -target=module.vpc
       -target=aws_s3_bucket.model_artifacts
       -target=aws_s3_bucket_public_access_block.model_artifacts
@@ -19,6 +19,8 @@
       -target=aws_security_group.sagemaker_runtime_vpc_endpoint
       -target=aws_vpc_endpoint.s3
       -target=aws_vpc_endpoint.sagemaker_runtime
+      -target=aws_iam_role.sagemaker_execution
+      -target=aws_iam_role_policy.sagemaker_execution
       -auto-approve -input=false
     chdir: "{{ terraform_dir }}"
   register: terraform_base_apply
@@ -26,7 +28,9 @@
 
 - name: Refresh Terraform outputs
   ansible.builtin.command:
-    cmd: "{{ terraform_command }} output -json"
+    cmd: >
+      powershell.exe -File "C:\Users\admin\.aws\run-aws.ps1"
+      {{ terraform_command }} output -json
     chdir: "{{ terraform_dir }}"
   changed_when: false
   register: terraform_outputs_raw

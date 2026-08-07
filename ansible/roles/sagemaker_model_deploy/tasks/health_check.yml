@@ -2,12 +2,14 @@
 # Poll the SageMaker endpoint until it reaches the InService state.
 
 - name: Wait for SageMaker endpoint to be InService
-  ansible.builtin.command: >
-    {{ aws_cli_command }} sagemaker describe-endpoint
-    --endpoint-name {{ terraform_outputs.sagemaker_endpoint_name.value }}
-    --region {{ aws_region }}
-    --query EndpointStatus
-    --output text
+  ansible.builtin.command:
+    cmd: >
+      powershell.exe -File "C:\Users\admin\.aws\run-aws.ps1"
+      {{ aws_cli_command }} sagemaker describe-endpoint
+      --endpoint-name {{ terraform_outputs.sagemaker_endpoint_name.value }}
+      --region {{ aws_region }}
+      --query EndpointStatus
+      --output text
   register: endpoint_status
   retries: "{{ sagemaker_endpoint_wait_retries }}"
   delay: "{{ sagemaker_endpoint_wait_delay }}"

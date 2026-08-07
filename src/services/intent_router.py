@@ -39,8 +39,8 @@ FREE_TALK_REGEX = (
     r")\b"
 )
 
-# Advice/duration cues: alone with control vocab => RAG (manual), not hardware
-CAR_ADVICE_REGEX = r"\b(bao lau|how long|should i|bao nhieu)\b|\bnen\b"
+# Advice/duration cues: CAR match + these => RAG (manual how-to/how-long), not hardware stub
+CAR_ADVICE_REGEX = r"\b(cach nao|lam sao|lam the nao|how to|how do|how long|bao lau|bao nhieu|should i|co nen|nen)\b"
 
 RAG_DOC_TOKEN_REGEX = (
     r"\b(p0\d{3}|ma loi|ap suat|lop|pdf|hvac|aeb|adas|pontis|tachonet|"
@@ -120,23 +120,22 @@ def classify_intent_fast(
     return intent, latency
 
 
-def classify_intent(query: str) -> tuple[str, int]:
+def classify_intent(query: str, normalized: str | None = None) -> tuple[str, int]:
     """
     Classifies intent using regex first.
     Falls back to the dedicated SageMaker LLM endpoint if regex results in FREE_TALK.
     Returns: (INTENT_STRING, latency_ms)
-
-    NOTE: Gateway production path should use classify_intent_fast() to avoid
-    any LLM round-trip overhead on every turn.
     """
     start_time = time.perf_counter()
 
-    intent = classify_intent_by_regex(query)
+    # Fast path: regex classifier (includes CAR_CONTROL vs RAG advice disambiguation)
+    intent, _ = classify_intent_fast(query, normalized=normalized)
 
     if intent != "FREE_TALK":
         latency = int((time.perf_counter() - start_time) * 1000)
         return intent, latency
 
+    # Slow path: SageMaker LLM fallback for ambiguous free-talk utterances
     intent = sagemaker_client.classify_intent_with_sagemaker(query)
 
     latency_ms = int((time.perf_counter() - start_time) * 1000)

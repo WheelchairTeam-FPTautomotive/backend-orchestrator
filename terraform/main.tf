@@ -250,8 +250,8 @@ module "ecs_service" {
   create_task_exec_iam_role = false
   create_tasks_iam_role     = false
 
-  task_exec_iam_role_arn = "arn:aws:iam::REDACTED_ACCOUNT_ID:role/${var.existing_task_execution_role_name}"
-  tasks_iam_role_arn     = "arn:aws:iam::REDACTED_ACCOUNT_ID:role/${var.existing_task_role_name}"
+  task_exec_iam_role_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.existing_task_execution_role_name}"
+  tasks_iam_role_arn     = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.existing_task_role_name}"
 
   container_definitions = {
     backend-orchestrator = {
@@ -282,7 +282,8 @@ module "ecs_service" {
         { name = "SAGEMAKER_LLM_ENDPOINT_NAME", value = var.deploy_sagemaker_model ? aws_sagemaker_endpoint.llm[0].name : "" },
         { name = "SAGEMAKER_REGION", value = var.aws_region },
         { name = "SAGEMAKER_USE_VPC_ENDPOINT", value = "true" },
-        { name = "SAGEMAKER_VPC_ENDPOINT_URL", value = "https://${aws_vpc_endpoint.sagemaker_runtime.dns_entry[0].dns_name}" }
+        { name = "SAGEMAKER_VPC_ENDPOINT_URL", value = "https://${aws_vpc_endpoint.sagemaker_runtime.dns_entry[0].dns_name}" },
+        { name = "SAGEMAKER_MODEL_PATH", value = "/opt/ml/model" }
       ]
 
       secrets = [
@@ -410,7 +411,7 @@ resource "aws_opensearchserverless_access_policy" "ecs_task" {
         }
       ]
       Principal = [
-        "arn:aws:iam::REDACTED_ACCOUNT_ID:role/${var.existing_task_role_name}"
+        "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.existing_task_role_name}"
       ]
     }
   ])

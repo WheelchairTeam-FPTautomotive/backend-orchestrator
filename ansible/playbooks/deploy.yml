@@ -25,6 +25,9 @@
         ecs_service_name: "{{ terraform_outputs.ecs_service_name.value }}"
         openai_api_key_secret_arn: "{{ terraform_outputs.openai_api_key_secret_arn.value }}"
         ecs_log_group_name: "{{ terraform_outputs.ecs_log_group_name.value }}"
+        sagemaker_endpoint_name: "{{ terraform_outputs.sagemaker_endpoint_name.value | default('') }}"
+        sagemaker_runtime_vpc_endpoint_dns: "{{ terraform_outputs.sagemaker_runtime_vpc_endpoint_dns.value | default('') }}"
+        aws_account_id: "{{ terraform_outputs.ecr_repository_url.value | regex_search('^\\d+') }}"
         ecs_app_secret_arns:
           OPENAI_API_KEY: "{{ terraform_outputs.openai_api_key_secret_arn.value }}"
 
@@ -55,8 +58,15 @@
         ecs_service_name: "{{ terraform_outputs.ecs_service_name.value }}"
         openai_api_key_secret_arn: "{{ terraform_outputs.openai_api_key_secret_arn.value }}"
         ecs_log_group_name: "{{ terraform_outputs.ecs_log_group_name.value }}"
+        aws_account_id: "{{ terraform_outputs.ecr_repository_url.value | regex_search('^\\d+') }}"
         ecs_app_secret_arns:
           OPENAI_API_KEY: "{{ terraform_outputs.openai_api_key_secret_arn.value }}"
+        ecs_app_env:
+          SAGEMAKER_LLM_ENDPOINT_NAME: "{{ terraform_outputs.sagemaker_endpoint_name.value | default('') }}"
+          SAGEMAKER_REGION: "{{ aws_region }}"
+          SAGEMAKER_USE_VPC_ENDPOINT: "true"
+          SAGEMAKER_VPC_ENDPOINT_URL: "https://{{ terraform_outputs.sagemaker_runtime_vpc_endpoint_dns.value | default('') }}"
+          SAGEMAKER_MODEL_PATH: "/opt/ml/model"
 
     - name: Retrieve current ECS service details
       community.aws.ecs_service_info:

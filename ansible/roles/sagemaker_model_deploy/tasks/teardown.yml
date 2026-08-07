@@ -11,6 +11,7 @@
 - name: Apply Terraform teardown layer
   ansible.builtin.command:
     cmd: >
+      powershell.exe -File "C:\Users\admin\.aws\run-aws.ps1"
       {{ terraform_command }} apply
       -var=deploy_sagemaker_model=false
       -var=aws_region={{ aws_region }}
@@ -23,12 +24,14 @@
   changed_when: "'0 added, 0 changed, 0 destroyed' not in terraform_teardown.stdout"
 
 - name: Confirm endpoint is removed
-  ansible.builtin.command: >
-    {{ aws_cli_command }} sagemaker describe-endpoint
-    --endpoint-name {{ sagemaker_endpoint_name | default('') }}
-    --region {{ aws_region }}
-    --query EndpointStatus
-    --output text
+  ansible.builtin.command:
+    cmd: >
+      powershell.exe -File "C:\Users\admin\.aws\run-aws.ps1"
+      {{ aws_cli_command }} sagemaker describe-endpoint
+      --endpoint-name {{ sagemaker_endpoint_name | default('') }}
+      --region {{ aws_region }}
+      --query EndpointStatus
+      --output text
   register: endpoint_teardown_status
   failed_when: endpoint_teardown_status.rc == 0
   changed_when: false

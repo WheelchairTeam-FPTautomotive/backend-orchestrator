@@ -92,10 +92,10 @@ variable "core_ai_url" {
 }
 
 variable "openai_api_key" {
-  description = "OpenAI API key stored in Secrets Manager"
+  description = "OpenAI API key stored in Secrets Manager (placeholder is safe when the app does not call OpenAI directly)"
   type        = string
   sensitive   = true
-  default     = ""
+  default     = "placeholder-not-configured"
 }
 
 # ------------------------------------------------------------------------------
@@ -111,13 +111,13 @@ variable "sagemaker_model_id" {
 variable "sagemaker_container_image" {
   description = "AWS Deep Learning Container image for the SageMaker vLLM endpoint"
   type        = string
-  default     = "763104351884.dkr.ecr.ap-southeast-2.amazonaws.com/huggingface-vllm:0.25.1-transformers5.10-gpu-py312-cu130-ubuntu22.04"
+  default     = "763104351884.dkr.ecr.ap-southeast-2.amazonaws.com/huggingface-vllm:0.25.1-transformers5.10.2-gpu-py312-cu130-ubuntu22.04"
 }
 
 variable "sagemaker_instance_type" {
   description = "SageMaker endpoint instance type (g4dn+AWQ default; use ml.g5.xlarge for FP16)"
   type        = string
-  default     = "ml.g4dn.xlarge"
+  default     = "ml.g4dn.2xlarge"
 }
 
 # MODIFIED: cu130 images require InferenceAmiVersion or container dies with no logs

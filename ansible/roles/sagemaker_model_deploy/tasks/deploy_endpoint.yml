@@ -5,10 +5,10 @@
 - name: Apply Terraform endpoint layer
   ansible.builtin.command:
     cmd: >
+      powershell.exe -File "C:\Users\admin\.aws\run-aws.ps1"
       {{ terraform_command }} apply
       -var=deploy_sagemaker_model=true
       -var=aws_region={{ aws_region }}
-      -var=sagemaker_execution_role_arn={{ sagemaker_execution_role_arn }}
       -var=sagemaker_model_id={{ sagemaker_model_id }}
       -var=sagemaker_instance_type={{ sagemaker_instance_type }}
       -var=sagemaker_inference_ami_version={{ sagemaker_inference_ami_version }}
@@ -22,7 +22,9 @@
 
 - name: Refresh Terraform outputs
   ansible.builtin.command:
-    cmd: "{{ terraform_command }} output -json"
+    cmd: >
+      powershell.exe -File "C:\Users\admin\.aws\run-aws.ps1"
+      {{ terraform_command }} output -json
     chdir: "{{ terraform_dir }}"
   changed_when: false
   register: terraform_outputs_raw

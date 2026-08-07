@@ -6,22 +6,14 @@
     cmd: "{{ aws_cli_command }} --version"
   changed_when: false
 
-- name: Fail if a SageMaker execution role ARN is not provided
-  ansible.builtin.fail:
-    msg: |
-      The hackathon IAM user cannot create new IAM roles. Set a pre-existing
-      SageMaker execution role ARN via the variable sagemaker_execution_role_arn
-      (e.g. ansible-playbook ... -e sagemaker_execution_role_arn=arn:aws:iam::...).
-  when: >
-    sagemaker_execution_role_arn is not defined
-    or sagemaker_execution_role_arn | length == 0
-
 - name: List current InService SageMaker endpoints
-  ansible.builtin.command: >
-    {{ aws_cli_command }} sagemaker list-endpoints
-    --region {{ aws_region }}
-    --query 'Endpoints[?EndpointStatus==`InService`].[EndpointName,EndpointStatus]'
-    --output json
+  ansible.builtin.command:
+    cmd: >
+      powershell.exe -File "C:\Users\admin\.aws\run-aws.ps1"
+      {{ aws_cli_command }} sagemaker list-endpoints
+      --region {{ aws_region }}
+      --query 'Endpoints[?EndpointStatus==`InService`].[EndpointName,EndpointStatus]'
+      --output json
   changed_when: false
   register: sagemaker_endpoints
 
@@ -31,15 +23,19 @@
       One or more SageMaker endpoints are already InService.
       Running another GPU endpoint could exceed the $200 budget.
       InService endpoints: {{ sagemaker_endpoints.stdout }}
-  when: sagemaker_endpoints.stdout | from_json | length > 0
+  when: >
+    sagemaker_endpoints.stdout | default('') | trim | length > 0
+    and (sagemaker_endpoints.stdout | trim | from_json | length) > 0
 
 - name: Check GPU instance service quota
-  ansible.builtin.command: >
-    {{ aws_cli_command }} service-quotas list-service-quotas
-    --service-code sagemaker
-    --region {{ aws_region }}
-    --query "Quotas[?contains(QuotaName, '{{ sagemaker_instance_type }}') || contains(QuotaName, '{{ sagemaker_instance_type_family }}')].[QuotaName,Value,QuotaCode]"
-    --output json
+  ansible.builtin.command:
+    cmd: >
+      powershell.exe -File "C:\Users\admin\.aws\run-aws.ps1"
+      {{ aws_cli_command }} service-quotas list-service-quotas
+      --service-code sagemaker
+      --region {{ aws_region }}
+      --query "Quotas[?contains(QuotaName, '{{ sagemaker_instance_type }}') || contains(QuotaName, '{{ sagemaker_instance_type_family }}')].[QuotaName,Value,QuotaCode]"
+      --output json
   changed_when: false
   failed_when: false
   register: sagemaker_quota
@@ -50,7 +46,13 @@
 
 - name: Parse quota values
   ansible.builtin.set_fact:
-    sagemaker_quota_values: "{{ sagemaker_quota.stdout | from_json | map(attribute='1') | map('float') | list }}"
+    sagemaker_quota_values: "{{ (sagemaker_quota.stdout | trim | from_json) | map(attribute='1') | map('float') | list }}"
+  when: sagemaker_quota.stdout | default('') | trim | length > 0
+
+- name: Set empty quota values when not discovered
+  ansible.builtin.set_fact:
+    sagemaker_quota_values: []
+  when: sagemaker_quota.stdout | default('') | trim | length == 0
 
 - name: Fail if GPU instance quota is explicitly zero
   ansible.builtin.fail:

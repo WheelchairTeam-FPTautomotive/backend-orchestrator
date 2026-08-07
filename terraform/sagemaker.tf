@@ -142,6 +142,52 @@ resource "aws_iam_role_policy" "sagemaker_execution" {
           "logs:PutLogEvents"
         ]
         Resource = "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/sagemaker/Endpoints/*"
+      },
+      {
+        Sid    = "EC2Networking"
+        Effect = "Allow"
+        Action = [
+          "ec2:CreateNetworkInterface",
+          "ec2:DeleteNetworkInterface",
+          "ec2:AttachNetworkInterface",
+          "ec2:DetachNetworkInterface",
+          "ec2:DescribeNetworkInterfaces",
+          "ec2:DescribeNetworkInterfaceAttribute",
+          "ec2:ModifyNetworkInterfaceAttribute",
+          "ec2:CreateNetworkInterfacePermission",
+          "ec2:DeleteNetworkInterfacePermission",
+          "ec2:DescribeNetworkInterfacePermissions",
+          "ec2:DescribeVpcs",
+          "ec2:DescribeDhcpOptions",
+          "ec2:DescribeSubnets",
+          "ec2:DescribeSecurityGroups",
+          "ec2:DescribeVpcEndpoints",
+          "ec2:DescribeVpcEndpointServices",
+          "ec2:CreateTags",
+          "ec2:DeleteTags",
+          "ec2:DescribeTags",
+          "ec2:DescribePrefixLists",
+          "ec2:DescribeAvailabilityZones"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# Allow the ECS task role (TeamRole) to invoke the SageMaker LLM endpoint.
+resource "aws_iam_role_policy" "ecs_task_sagemaker_invoke" {
+  name = "${local.short_name}-ecs-task-sagemaker-invoke"
+  role = "TeamRole"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "InvokeSageMakerLLMEndpoint"
+        Effect   = "Allow"
+        Action   = "sagemaker:InvokeEndpoint"
+        Resource = var.deploy_sagemaker_model ? aws_sagemaker_endpoint.llm[0].arn : "*"
       }
     ]
   })

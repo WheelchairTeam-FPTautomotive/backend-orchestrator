@@ -10,7 +10,7 @@ import httpx
 import os
 import logging
 from services.voice_utils import transcribe_audio_bytes, synthesize_speech_bytes
-from services.intent_router import classify_intent_fast
+from services.intent_router import classify_intent
 from services.car_controller import DEFAULT_COMMAND_ID, get_command_id
 from services.text_norm import normalize_utterance
 from services.query_cache import QueryCache, query_cache
@@ -282,7 +282,7 @@ async def route_text_query(
     total_start = time.perf_counter()
     raw_utterance = payload.query
     normalized = normalize_utterance(raw_utterance)
-    intent, intent_ms = classify_intent_fast(raw_utterance, normalized=normalized)
+    intent, intent_ms = classify_intent(raw_utterance, normalized=normalized)
     mode = _core_ai_mode_for_intent(intent)
     language = payload.language or "vi"
     bypass = _should_bypass_cache(request, x_cache_bypass)
@@ -458,7 +458,7 @@ async def route_voice_query(request: Request, file: UploadFile = File(...), lang
     # --- START MODIFICATION ---
     raw_utterance = transcript
     normalized = normalize_utterance(raw_utterance)
-    intent, intent_ms = classify_intent_fast(raw_utterance, normalized=normalized)
+    intent, intent_ms = classify_intent(raw_utterance, normalized=normalized)
     mode = _core_ai_mode_for_intent(intent)
     logger.info(
         f"[Gateway] voice intent={intent} ({intent_ms}ms) mode={mode} "

@@ -1,42 +1,93 @@
 ---
-# Download the Hugging Face model snapshot, package it as model.tar.gz, and
-# upload it to the S3 bucket created by the Terraform base layer.
+# Package and upload the SageMaker model tarball to S3.
+# Idempotent: if the tarball already exists in S3, local download/packaging
+# and the upload are skipped. AWS credentials are read from the local
+# ~/.aws/credentials file by the run-aws.ps1 helper; no credentials are stored
+# in this repository.
 
-- name: Ensure model staging directory exists
+- name: Check if model tarball already exists in S3
+  ansible.builtin.command:
+    cmd: >
+      powershell.exe -File "C:\Users\admin\.aws\run-aws.ps1"
+      {{ aws_cli_command }} s3api head-object
+      --bucket {{ sagemaker_model_bucket }}
+      --key {{ sagemaker_model_s3_key }}
+      --region {{ aws_region }}
+  ignore_errors: true
+  changed_when: false
+  register: s3_model_head
+
+- name: Set fact for S3 model tarball existence
+  ansible.builtin.set_fact:
+    s3_model_tarball_exists: "{{ s3_model_head.rc == 0 }}"
+
+- name: Report S3 model tarball status
+  ansible.builtin.debug:
+    msg: "Model tarball already present in S3; skipping download, packaging, and upload."
+  when: s3_model_tarball_exists
+
+- name: Check if model tarball already exists locally
+  ansible.builtin.stat:
+    path: "{{ sagemaker_model_tarball }}"
+  register: local_tarball_stat
+  when: not s3_model_tarball_exists
+
+- name: Prepare model tarball directory
   ansible.builtin.file:
     path: "{{ sagemaker_model_local_dir }}"
     state: directory
-    mode: "0755"
+    mode: '0755'
+  when: not s3_model_tarball_exists
 
-- name: Check if model tarball already exists
-  ansible.builtin.stat:
-    path: "{{ sagemaker_model_tarball }}"
-  register: model_tarball_stat
+- name: Download model artifacts from Hugging Face
+  ansible.builtin.command:
+    cmd: "huggingface-cli download {{ sagemaker_model_id }} --local-dir {{ sagemaker_model_local_dir }} --local-dir-use-symlinks False"
+  when:
+    - not s3_model_tarball_exists
+    - not local_tarball_stat.stat.exists
 
-- name: Install required Python packages
-  ansible.builtin.pip:
-    name:
-      - huggingface_hub
-      - boto3
-    state: present
-  when: not model_tarball_stat.stat.exists
+- name: Create model.tar.gz
+  ansible.builtin.command:
+    cmd: "tar -czf {{ sagemaker_model_tarball }} -C {{ sagemaker_model_local_dir }} ."
+  when:
+    - not s3_model_tarball_exists
+    - not local_tarball_stat.stat.exists
 
-- name: Prepare model tarball
-  ansible.builtin.command: >
-    {{ ansible_playbook_python }} {{ role_path }}/files/prepare_model.py
-    --model-id {{ sagemaker_model_id | quote }}
-    --local-dir {{ sagemaker_model_local_dir | quote }}
-    --tarball {{ sagemaker_model_tarball | quote }}
-    --skip-if-exists
-  register: model_prepare
-  changed_when: "'Created' in model_prepare.stdout"
-  when: not model_tarball_stat.stat.exists
+- name: Ensure S3 model bucket exists
+  ansible.builtin.command:
+    cmd: >
+      powershell.exe -File "C:\Users\admin\.aws\run-aws.ps1"
+      {{ aws_cli_command }} s3 mb
+      s3://{{ sagemaker_model_bucket }}
+      --region {{ aws_region }}
+  ignore_errors: true
+  changed_when: false
+  when: not s3_model_tarball_exists
+
+- name: Convert local tarball path to Windows path
+  ansible.builtin.command:
+    cmd: "wslpath -w {{ sagemaker_model_tarball }}"
+  changed_when: false
+  register: sagemaker_model_tarball_win
+  when: not s3_model_tarball_exists
 
 - name: Upload model tarball to S3
-  ansible.builtin.command: >
-    {{ aws_cli_command }} s3 cp {{ sagemaker_model_tarball | quote }}
-    s3://{{ sagemaker_model_bucket }}/{{ sagemaker_model_s3_key }}
-    --region {{ aws_region }}
-  register: s3_upload
-  changed_when: "'upload:' in s3_upload.stdout"
-  when: sagemaker_model_bucket | length > 0
+  ansible.builtin.command:
+    cmd: >
+      powershell.exe -File "C:\Users\admin\.aws\run-aws.ps1"
+      {{ aws_cli_command }} s3 cp
+      '{{ sagemaker_model_tarball_win.stdout | trim }}'
+      's3://{{ sagemaker_model_bucket }}/{{ sagemaker_model_s3_key }}'
+      --region {{ aws_region }}
+  when: not s3_model_tarball_exists
+  register: s3_upload_result
+  changed_when: true
+
+- name: Verify S3 upload
+  ansible.builtin.command:
+    cmd: >
+      powershell.exe -File "C:\Users\admin\.aws\run-aws.ps1"
+      {{ aws_cli_command }} s3 ls
+      s3://{{ sagemaker_model_bucket }}/{{ sagemaker_model_s3_key }}
+      --region {{ aws_region }}
+  changed_when: false
