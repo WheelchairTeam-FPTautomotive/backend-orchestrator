@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """User-facing E2E latency: typed ask → answer received (gateway /copilot/query).
 
 Wall-clock from HTTP request start until response body is fully read —
@@ -79,7 +78,7 @@ def main() -> int:
         with urllib.request.urlopen(args.base_url.rstrip("/") + "/api/v1/health", timeout=5) as r:
             if r.status != 200:
                 raise RuntimeError(r.status)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         print(f"error: gateway not healthy at {args.base_url}: {exc}", file=sys.stderr)
         return 2
 
@@ -89,7 +88,7 @@ def main() -> int:
     print(f"- query: `{args.query}`")
     print(f"- language: `{args.language}`")
     print(f"- cache_bypass: `{bypass}`")
-    print(f"- metric: client wall-clock until full JSON body received")
+    print("- metric: client wall-clock until full JSON body received")
     print()
 
     # First user query (cold-ish for this session path)

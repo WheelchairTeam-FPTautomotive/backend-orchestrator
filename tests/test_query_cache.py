@@ -12,8 +12,8 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from services.query_cache import QueryCache, query_cache  # noqa: E402
-from services.text_norm import normalize_utterance  # noqa: E402
+from services.query_cache import QueryCache, query_cache
+from services.text_norm import normalize_utterance
 
 
 @pytest.fixture(autouse=True)
