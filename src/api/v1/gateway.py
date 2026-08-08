@@ -92,6 +92,10 @@ def _cached_query_response(
 def _route_car_control(raw_utterance: str, normalized: str, language: str) -> dict:
     """Resolve command_id on normalized text; warn when unmapped GENERIC."""
     # --- START MODIFICATION ---
+    from services.safety import is_unsafe_utterance
+
+    if is_unsafe_utterance(raw_utterance, normalized=normalized):
+        return _refused_response(raw_utterance, language=language)
     cmd_id = get_command_id(raw_utterance, normalized=normalized)
     if cmd_id == DEFAULT_COMMAND_ID:
         logger.warning(
@@ -99,6 +103,22 @@ def _route_car_control(raw_utterance: str, normalized: str, language: str) -> di
             f"utterance={raw_utterance!r} normalized={normalized!r}"
         )
     return _car_control_response(raw_utterance, command_id=cmd_id, language=language)
+    # --- END MODIFICATION ---
+
+
+def _refused_response(query: str, language: str = "vi") -> dict:
+    # --- START MODIFICATION ---
+    if language == "en":
+        answer = "Request refused for vehicle operational safety reasons."
+    else:
+        answer = "Yêu cầu bị từ chối vì lý do an toàn vận hành xe."
+    return {
+        "query": query,
+        "answer": answer,
+        "command_id": None,
+        "citations": [],
+        "status": "refused",
+    }
     # --- END MODIFICATION ---
 
 router = APIRouter(prefix="/api/v1")
@@ -176,6 +196,9 @@ class QueryResponse(BaseModel):
     status: str = "success"
     # MODIFIED: optional stage timings for cockpit developer-mode footer
     latency: LatencyMetrics | None = None
+    # --- START MODIFICATION ---
+    handoff: bool = False
+    # --- END MODIFICATION ---
 
 
 def _timeout_soft_response(query: str, language: str = "vi") -> QueryResponse:
@@ -304,13 +327,13 @@ async def route_text_query(
                 total_start=total_start,
             )
 
-    if intent == "CAR_CONTROL":
-        data = _route_car_control(raw_utterance, normalized, language)
+    if intent == "REFUSED":
+        data = _refused_response(raw_utterance, language=language)
         total_ms = int((time.perf_counter() - total_start) * 1000)
         body = QueryResponse(
             query=data["query"],
             answer=data["answer"],
-            command_id=data["command_id"],
+            command_id=None,
             citations=data["citations"],
             status=data["status"],
             latency=LatencyMetrics(
@@ -325,7 +348,34 @@ async def route_text_query(
             total_ms=total_ms,
             cache_status="BYPASS" if bypass else "MISS",
         )
-        if not bypass:
+        logger.info(
+            f"[Gateway] intent=REFUSED cache={headers['X-Cache-Status']} "
+            f"total_ms={total_ms}"
+        )
+        return _json_with_headers(body, headers)
+
+    if intent == "CAR_CONTROL":
+        data = _route_car_control(raw_utterance, normalized, language)
+        total_ms = int((time.perf_counter() - total_start) * 1000)
+        body = QueryResponse(
+            query=data["query"],
+            answer=data["answer"],
+            command_id=data.get("command_id"),
+            citations=data["citations"],
+            status=data["status"],
+            latency=LatencyMetrics(
+                stt_ms=0,
+                core_ai_ms=0,
+                tts_ms=0,
+                total_ms=total_ms,
+            ),
+        )
+        headers = _latency_header_map(
+            intent_ms=intent_ms,
+            total_ms=total_ms,
+            cache_status="BYPASS" if bypass else "MISS",
+        )
+        if not bypass and data["status"] in {"success", "refused"}:
             query_cache.set(cache_key, body.model_dump())
         logger.info(f"[Gateway] cache={headers['X-Cache-Status']} total_ms={total_ms}")
         return _json_with_headers(body, headers)
@@ -364,6 +414,9 @@ async def route_text_query(
             audio_base64=audio_b64,
             citations=data.get("citations", []),
             status=data.get("status", "success"),
+            # --- START MODIFICATION ---
+            handoff=bool(data.get("handoff", False)),
+            # --- END MODIFICATION ---
             latency=LatencyMetrics(
                 stt_ms=0,
                 core_ai_ms=core_ai_ms,
@@ -475,7 +528,10 @@ async def route_voice_query(request: Request, file: UploadFile = File(...), lang
     )
 
     try:
-        if intent == "CAR_CONTROL":
+        # --- START MODIFICATION ---
+        if intent == "REFUSED":
+            data = _refused_response(raw_utterance, language=language)
+        elif intent == "CAR_CONTROL":
             data = _route_car_control(raw_utterance, normalized, language)
         else:
             client: httpx.AsyncClient = request.app.state.http_client
@@ -492,6 +548,7 @@ async def route_voice_query(request: Request, file: UploadFile = File(...), lang
                     detail="Core AI failed executing search."
                 )
             data = response.json()
+        # --- END MODIFICATION ---
 
         core_ai_ms = int((time.perf_counter() - core_ai_start) * 1000)
         audio_bytes, tts_ms = await synthesize_speech_bytes(data.get("answer", ""), language=language)
