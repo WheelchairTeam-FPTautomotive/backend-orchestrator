@@ -382,6 +382,24 @@ async def route_text_query(
 
     try:
         client: httpx.AsyncClient = request.app.state.http_client
+        # --- START MODIFICATION ---
+        # RC1: warn when Core retrieval is still warming
+        try:
+            health_url = CORE_AI_URL.replace("/search", "/health")
+            hr = await client.get(health_url, timeout=2.0)
+            payload_h = hr.json() if hr.headers.get("content-type", "").startswith("application/json") else {}
+            if hr.status_code != 200 or (
+                isinstance(payload_h, dict)
+                and payload_h.get("status") not in {None, "ready", "ok"}
+            ):
+                logger.warning(
+                    "[Gateway] Core AI not ready (status=%s body=%s); RAG may cold-start",
+                    hr.status_code,
+                    hr.text[:200],
+                )
+        except Exception as warm_exc:  # noqa: BLE001
+            logger.warning("[Gateway] Core AI health probe failed: %s", warm_exc)
+        # --- END MODIFICATION ---
         core_ai_start = time.perf_counter()
         response = await client.post(
             CORE_AI_URL,
