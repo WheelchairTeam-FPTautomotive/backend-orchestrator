@@ -397,7 +397,7 @@ async def route_text_query(
                     hr.status_code,
                     hr.text[:200],
                 )
-        except Exception as warm_exc:  # noqa: BLE001
+        except Exception as warm_exc:
             logger.warning("[Gateway] Core AI health probe failed: %s", warm_exc)
         # --- END MODIFICATION ---
         core_ai_start = time.perf_counter()

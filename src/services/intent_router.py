@@ -124,12 +124,7 @@ def classify_intent_fast(
 
     # 1) Direct control via shared command contract (single source of truth)
     cmd_id = get_command_id(folded, normalized=folded)
-    if cmd_id != DEFAULT_COMMAND_ID:
-        if re.search(CAR_ADVICE_REGEX, folded) and not _has_trailing_imperative(folded):
-            intent = "RAG_SEARCH"
-        else:
-            intent = "CAR_CONTROL"
-    elif re.search(CAR_CONTROL_REGEX, folded):
+    if cmd_id != DEFAULT_COMMAND_ID or re.search(CAR_CONTROL_REGEX, folded):
         if re.search(CAR_ADVICE_REGEX, folded) and not _has_trailing_imperative(folded):
             intent = "RAG_SEARCH"
         else:
