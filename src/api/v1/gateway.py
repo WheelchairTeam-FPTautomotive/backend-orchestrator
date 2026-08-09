@@ -14,6 +14,7 @@ from services.intent_router import classify_intent
 from services.car_controller import DEFAULT_COMMAND_ID, get_command_id
 from services.text_norm import normalize_utterance
 from services.query_cache import QueryCache, query_cache
+from services.session_memory import session_memory, ttl_min_to_seconds
 import base64
 
 logger = logging.getLogger("backend.orchestrator.gateway")
@@ -171,6 +172,17 @@ class QueryRequest(BaseModel):
         default="vi",
         description="UI locale — answer language follows this, not the query language",
     )
+    # --- START MODIFICATION ---
+    # Ephemeral STM: idle TTL presets; 0 = off
+    session_id: str | None = Field(
+        default=None,
+        description="Client session UUID; gateway mints one when STM is on",
+    )
+    session_ttl_min: Literal[0, 3, 5, 10] | None = Field(
+        default=None,
+        description="Idle TTL minutes (0/3/5/10); default from SESSION_IDLE_TTL_S",
+    )
+    # --- END MODIFICATION ---
 
 class CitationPayload(BaseModel):
     document_id: str = "doc_unk"
@@ -198,6 +210,9 @@ class QueryResponse(BaseModel):
     latency: LatencyMetrics | None = None
     # --- START MODIFICATION ---
     handoff: bool = False
+    session_id: str | None = None
+    session_active: bool = False
+    stm_turns: int = 0
     # --- END MODIFICATION ---
 
 
@@ -299,9 +314,15 @@ async def route_text_query(
         alias="X-Cache-Bypass",
         description="Set to `1` to skip cache lookup/store (golden eval / benchmarks).",
     ),
+    x_session_reset: str | None = Header(
+        default=None,
+        alias="X-Session-Reset",
+        description="Set to `1` to clear STM before handling this turn.",
+    ),
 ):
     # --- START MODIFICATION ---
     # Ingress normalize once; language-aware cache + latency headers (#16).
+    # Ephemeral STM for RAG/FREE_TALK only (never CAR/REFUSED).
     total_start = time.perf_counter()
     raw_utterance = payload.query
     normalized = normalize_utterance(raw_utterance)
@@ -311,9 +332,29 @@ async def route_text_query(
     bypass = _should_bypass_cache(request, x_cache_bypass)
     cache_key = QueryCache.make_key(normalized, language, intent)
 
+    ttl_s = ttl_min_to_seconds(payload.session_ttl_min)
+    reset_stm = str(x_session_reset or "").strip() == "1"
+    use_stm = intent in {"RAG_SEARCH", "FREE_TALK"} and ttl_s > 0
+    session_id = payload.session_id
+    session_active = False
+    stm_turns = 0
+    conversation_context = ""
+    if use_stm:
+        session_id, stm_state, session_active = session_memory.get_or_create(
+            payload.session_id,
+            ttl_s=ttl_s,
+            reset=reset_stm,
+        )
+        conversation_context = session_memory.context_block(stm_state)
+        stm_turns = len(stm_state.turns)
+    elif reset_stm and payload.session_id:
+        session_memory.clear(payload.session_id)
+        session_id = payload.session_id
+
     logger.info(
         f"[Gateway] intent={intent} ({intent_ms}ms) mode={mode} "
-        f"language={language} bypass={bypass} query={raw_utterance!r} "
+        f"language={language} bypass={bypass} stm={use_stm} "
+        f"session={session_id!r} turns={stm_turns} query={raw_utterance!r} "
         f"normalized={normalized!r}"
     )
 
@@ -336,6 +377,9 @@ async def route_text_query(
             command_id=None,
             citations=data["citations"],
             status=data["status"],
+            session_id=session_id,
+            session_active=False,
+            stm_turns=0,
             latency=LatencyMetrics(
                 stt_ms=0,
                 core_ai_ms=0,
@@ -363,6 +407,9 @@ async def route_text_query(
             command_id=data.get("command_id"),
             citations=data["citations"],
             status=data["status"],
+            session_id=session_id,
+            session_active=False,
+            stm_turns=0,
             latency=LatencyMetrics(
                 stt_ms=0,
                 core_ai_ms=0,
@@ -401,13 +448,16 @@ async def route_text_query(
             logger.warning("[Gateway] Core AI health probe failed: %s", warm_exc)
         # --- END MODIFICATION ---
         core_ai_start = time.perf_counter()
+        core_payload: dict = {
+            "query": payload.query,
+            "mode": mode,
+            "language": language,
+        }
+        if conversation_context:
+            core_payload["conversation_context"] = conversation_context
         response = await client.post(
             CORE_AI_URL,
-            json={
-                "query": payload.query,
-                "mode": mode,
-                "language": language,
-            },
+            json=core_payload,
         )
         core_ai_ms = int((time.perf_counter() - core_ai_start) * 1000)
         if response.status_code != 200:
@@ -426,6 +476,15 @@ async def route_text_query(
         audio_b64 = base64.b64encode(audio_bytes).decode("utf-8") if audio_bytes else None
         total_ms = int((time.perf_counter() - total_start) * 1000)
 
+        if use_stm and session_id:
+            session_memory.append_turn(session_id, "user", raw_utterance)
+            session_memory.append_turn(session_id, "assistant", answer_text)
+            _, stm_state, _ = session_memory.get_or_create(
+                session_id, ttl_s=ttl_s, reset=False
+            )
+            stm_turns = len(stm_state.turns)
+            session_active = stm_turns > 0
+
         body = QueryResponse(
             query=data.get("query", payload.query),
             answer=answer_text,
@@ -434,6 +493,9 @@ async def route_text_query(
             status=data.get("status", "success"),
             # --- START MODIFICATION ---
             handoff=bool(data.get("handoff", False)),
+            session_id=session_id,
+            session_active=bool(use_stm and session_active),
+            stm_turns=stm_turns if use_stm else 0,
             # --- END MODIFICATION ---
             latency=LatencyMetrics(
                 stt_ms=0,

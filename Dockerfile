@@ -63,4 +63,5 @@ ENTRYPOINT ["/app/scripts/entrypoint.sh"]
 
 # Run the FastAPI gateway via the Python module runner to avoid the shebang
 # mismatch between multi-stage build layers when calling the .venv binary.
-CMD ["python", "-m", "uvicorn", "main:app", "--app-dir", "src", "--host", "0.0.0.0", "--port", "8000"]
+# Pin 1 worker so in-process SessionMemoryStore stays coherent (STM).
+CMD ["python", "-m", "uvicorn", "main:app", "--app-dir", "src", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
