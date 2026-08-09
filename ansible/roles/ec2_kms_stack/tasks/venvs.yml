@@ -1,0 +1,76 @@
+---
+# Host venv install via uv (native path — no Docker image build).
+#
+# CRITICAL: do not let uv drop managed CPython under /root/.local —
+# systemd User=ubuntu cannot exec it → status 203/EXEC Permission denied.
+# Install managed interpreters under /opt/kms/.uv-python (world-readable).
+- name: Install uv (normalize path to {{ uv_bin }})
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if [ -x "{{ uv_bin }}" ]; then
+      exit 0
+    fi
+    if [ -x /usr/local/uv ]; then
+      ln -sfn /usr/local/uv "{{ uv_bin }}"
+      ln -sfn /usr/local/uvx /usr/local/bin/uvx 2>/dev/null || true
+      exit 0
+    fi
+    curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR=/usr/local/bin sh
+    if [ ! -x "{{ uv_bin }}" ] && [ -x /usr/local/uv ]; then
+      ln -sfn /usr/local/uv "{{ uv_bin }}"
+    fi
+    test -x "{{ uv_bin }}"
+  args:
+    executable: /bin/bash
+    creates: "{{ uv_bin }}"
+
+- name: Ensure shared uv Python install dir
+  ansible.builtin.file:
+    path: "{{ kms_install_root }}/.uv-python"
+    state: directory
+    owner: "{{ kms_service_user }}"
+    group: "{{ kms_service_user }}"
+    mode: "0755"
+  when: not (use_docker_compose | bool)
+
+- name: Install managed CPython {{ kms_python_version }} for service user
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export PATH="/usr/local/bin:$PATH"
+    export UV_PYTHON_INSTALL_DIR="{{ kms_install_root }}/.uv-python"
+    "{{ uv_bin }}" python install "{{ kms_python_version }}"
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ kms_service_user }}"
+  when: not (use_docker_compose | bool)
+
+- name: Create gateway venv and install deps
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export PATH="/usr/local/bin:$PATH"
+    export UV_PYTHON_INSTALL_DIR="{{ kms_install_root }}/.uv-python"
+    cd "{{ kms_gateway_dir }}"
+    rm -rf .venv
+    "{{ uv_bin }}" venv --python "{{ kms_python_version }}" .venv
+    "{{ uv_bin }}" pip install --python .venv/bin/python -e .
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ kms_service_user }}"
+  when: not (use_docker_compose | bool)
+
+- name: Create Core AI venv and install deps
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export PATH="/usr/local/bin:$PATH"
+    export UV_PYTHON_INSTALL_DIR="{{ kms_install_root }}/.uv-python"
+    cd "{{ kms_core_dir }}"
+    rm -rf .venv
+    "{{ uv_bin }}" venv --python "{{ kms_python_version }}" .venv
+    "{{ uv_bin }}" pip install --python .venv/bin/python -e .
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ kms_service_user }}"
+  when: not (use_docker_compose | bool)

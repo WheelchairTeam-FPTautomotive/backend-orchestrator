@@ -1,5 +1,41 @@
 ---
-- name: Install systemd units for gateway and Core (non-Compose path)
+# --- START MODIFICATION ---
+# Two deploy methods: tear down the other path before starting this one.
+- name: Tear down leftover Docker Compose stack (Method A — native)
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if [ -f "{{ kms_gateway_dir }}/docker-compose.yml" ] && command -v docker >/dev/null 2>&1; then
+      cd "{{ kms_gateway_dir }}"
+      docker compose down --remove-orphans || true
+      docker system prune -af || true
+    fi
+  args:
+    executable: /bin/bash
+  when: (teardown_docker | bool) and not (use_docker_compose | bool)
+  changed_when: true
+
+- name: Stop native systemd units (Method B — Compose)
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  loop:
+    - kms-gateway.service
+    - kms-core.service
+  when: use_docker_compose | bool
+  failed_when: false
+
+- name: Assert synced gateway tree present
+  ansible.builtin.stat:
+    path: "{{ kms_gateway_dir }}/src/main.py"
+  register: gateway_main
+
+- name: Fail if gateway was not synced
+  ansible.builtin.fail:
+    msg: "{{ kms_gateway_dir }}/src/main.py missing — sync kms_gateway_src first."
+  when: not gateway_main.stat.exists
+
+- name: Install systemd units for gateway and Core (Method A)
   ansible.builtin.template:
     src: "{{ item }}.j2"
     dest: "/etc/systemd/system/{{ item }}"
@@ -10,21 +46,27 @@
   when: not (use_docker_compose | bool)
   notify: Reload systemd
 
-- name: Enable and start gateway+Core systemd
+- name: Enable and start gateway+Core systemd (Method A)
   ansible.builtin.systemd:
     name: "{{ item }}"
     enabled: true
-    state: started
+    state: restarted
     daemon_reload: true
   loop:
-    - kms-gateway.service
     - kms-core.service
+    - kms-gateway.service
   when: not (use_docker_compose | bool)
 
-- name: Docker Compose up gateway+Core (workers=1 via Dockerfile CMD)
+- name: Docker Compose up gateway+Core (Method B)
   ansible.builtin.command:
     cmd: docker compose up -d --build
     chdir: "{{ kms_gateway_dir }}"
+  environment:
+    DOCKER_BUILDKIT: "1"
+    COMPOSE_HTTP_TIMEOUT: "300"
   when: use_docker_compose | bool
+  async: 3600
+  poll: 30
   register: compose_up
-  changed_when: "'Started' in compose_up.stdout or 'Creating' in compose_up.stdout or compose_up.rc == 0"
+  changed_when: compose_up.rc == 0
+# --- END MODIFICATION ---

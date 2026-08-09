@@ -1,0 +1,18 @@
+---
+# Method B: Docker Compose on the EC2 host.
+# Prefer Method A (native) for Budget/disk. Prefer ECS Fargate if you want
+# managed containers long-term (legacy playbooks/deploy.yml).
+# Requires ~80GB+ root disk for image builds.
+- name: Deploy KMS on EC2 — Docker Compose
+  hosts: kms_ec2
+  become: true
+  gather_facts: "{{ gather_facts | default(true) | bool }}"
+  vars:
+    deploy_method: compose
+    use_docker_compose: true
+    teardown_docker: false
+    kms_gateway_src: "{{ playbook_dir }}/../.."
+    kms_core_src: "{{ playbook_dir }}/../../../kms-core-ai"
+
+  roles:
+    - role: "{{ playbook_dir }}/../roles/ec2_kms_stack"

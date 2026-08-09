@@ -1,13 +1,22 @@
 ---
 # Inventory for locked one-EC2 deploy.
-# Replace ansible_host / key / user before running deploy-ec2-stack.yml.
+# EIP from terraform output ec2_public_ip. Key is on Windows user .ssh (WSL path below).
 all:
   children:
     kms_ec2:
       hosts:
         kms-app-1:
-          ansible_host: CHANGE_ME_EC2_PUBLIC_IP
+          ansible_host: 52.64.18.95
           ansible_user: ubuntu
-          ansible_ssh_private_key_file: ~/.ssh/kms-ec2.pem
+          # Copy key off /mnt/c first — chmod is ignored on DrvFS (stays 0555 → SSH refuses).
+          #   mkdir -p ~/.ssh && cp /mnt/c/Users/A/.ssh/kms-ec2.pem ~/.ssh/ && chmod 400 ~/.ssh/kms-ec2.pem
+          ansible_ssh_private_key_file: /home/dukeng/.ssh/kms-ec2.pem
+          ansible_ssh_common_args: >-
+            -o StrictHostKeyChecking=accept-new
+            -o UserKnownHostsFile=/tmp/kms_ec2_known_hosts
+            -o ConnectTimeout=20
+            -o ServerAliveInterval=5
+            -o ServerAliveCountMax=3
+          ansible_ssh_timeout: 30
       vars:
         ansible_python_interpreter: /usr/bin/python3

@@ -1,11 +1,82 @@
 ---
-- name: Ensure VieNeu system user
-  ansible.builtin.user:
-    name: "{{ vieneu_user }}"
-    system: true
-    shell: /usr/sbin/nologin
-    home: "{{ vieneu_workdir }}"
-    create_home: true
+# VieNeu-TTS v3 Turbo on CPU (ONNX, torch-free) — official README Option 1.
+# Docker GPU path is intentionally not used on this EC2 lock.
+- name: Ensure VieNeu install directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ vieneu_user }}"
+    group: "{{ vieneu_user }}"
+    mode: "0755"
+  loop:
+    - "{{ vieneu_workdir }}"
+    - "{{ vieneu_repo_dir }}"
+    - "{{ vieneu_hf_cache }}"
+
+- name: Clone VieNeu-TTS upstream
+  ansible.builtin.git:
+    repo: "{{ vieneu_git_url }}"
+    dest: "{{ vieneu_repo_dir }}"
+    version: "{{ vieneu_git_version }}"
+    force: false
+    update: true
+  become: true
+  become_user: "{{ vieneu_user }}"
+
+- name: uv sync VieNeu CPU stack (v3 Turbo ONNX)
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export PATH="/usr/local/bin:$PATH"
+    export UV_PYTHON_INSTALL_DIR="{{ kms_install_root }}/.uv-python"
+    export HF_HOME="{{ vieneu_hf_cache }}"
+    cd "{{ vieneu_repo_dir }}"
+    "{{ uv_bin }}" sync
+    "{{ uv_bin }}" pip install --python .venv/bin/python fastapi "uvicorn[standard]"
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ vieneu_user }}"
+  environment:
+    HF_HOME: "{{ vieneu_hf_cache }}"
+    HOME: "{{ vieneu_workdir }}"
+
+- name: Install OpenAI-compatible VieNeu server script
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../scripts/vieneu_openai_server.py"
+    dest: "{{ vieneu_workdir }}/openai_server.py"
+    owner: "{{ vieneu_user }}"
+    group: "{{ vieneu_user }}"
+    mode: "0755"
+
+- name: Warm-load VieNeu v3 Turbo ONNX model (first download)
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export PATH="/usr/local/bin:$PATH"
+    export HF_HOME="{{ vieneu_hf_cache }}"
+    cd "{{ vieneu_repo_dir }}"
+    .venv/bin/python - <<'PY'
+    from vieneu import Vieneu
+    e = Vieneu(backend="onnx")
+    print("voices", len(e.list_preset_voices() or []))
+    a = e.infer("Xin chào.", voice="Trúc Ly")
+    print("warmup_samples", len(a))
+    PY
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ vieneu_user }}"
+  environment:
+    HF_HOME: "{{ vieneu_hf_cache }}"
+    HOME: "{{ vieneu_workdir }}"
+  async: 1800
+  poll: 30
+
+- name: Install ffmpeg for optional mp3 responses
+  ansible.builtin.apt:
+    name: ffmpeg
+    state: present
+    update_cache: true
+  when: ansible_facts['os_family'] | default('Debian') == "Debian"
 
 - name: Install vieneu.service
   ansible.builtin.template:
@@ -18,5 +89,15 @@
   ansible.builtin.systemd:
     name: vieneu.service
     enabled: true
-    state: started
+    state: restarted
     daemon_reload: true
+
+- name: Point gateway env at local VieNeu
+  ansible.builtin.lineinfile:
+    path: "{{ kms_env_dir }}/gateway.env"
+    regexp: "^{{ item.key }}="
+    line: "{{ item.key }}={{ item.value }}"
+  loop:
+    - { key: "VIENEU_TTS_URL", value: "http://127.0.0.1:{{ vieneu_port }}/v1/audio/speech" }
+    - { key: "VIENEU_VOICE", value: "{{ vieneu_default_voice }}" }
+  notify: Restart gateway after VieNeu

@@ -1,5 +1,6 @@
 ---
 # Locked one-EC2 KMS stack defaults (Acc→Lat→Budget).
+# Native systemd on EC2 (not Docker). Docker/ECS is a different path.
 kms_install_root: /opt/kms
 kms_gateway_dir: "{{ kms_install_root }}/backend-orchestrator"
 kms_core_dir: "{{ kms_install_root }}/kms-core-ai"
@@ -8,8 +9,6 @@ kms_gateway_port: 8000
 kms_core_port: 8001
 vieneu_port: 8022
 
-# Repo sync: set to local checkout paths on the control machine (synchronize).
-# Leave empty to skip sync (code already on host).
 kms_gateway_src: ""
 kms_core_src: ""
 
@@ -18,14 +17,29 @@ aws_region: ap-southeast-2
 enable_ollama_fallback: false
 ollama_model: qwen2.5:7b-instruct
 
-# Use Docker Compose for gateway+Core (recommended). VieNeu always systemd.
-use_docker_compose: true
+# Deploy method (set by playbook):
+#   native  → use_docker_compose=false (Method A — recommended on EC2)
+#   compose → use_docker_compose=true  (Method B — needs large disk; prefer ECS long-term)
+deploy_method: native
+use_docker_compose: false
+teardown_docker: true
 
-# VieNeu binary/command — override for your install layout.
-vieneu_user: vieneu
-vieneu_workdir: "{{ kms_install_root }}/vieneu"
-vieneu_exec_start: "/usr/bin/env vieneu-server --host 127.0.0.1 --port {{ vieneu_port }}"
+uv_bin: /usr/local/bin/uv
+# Projects require >=3.12; Ubuntu 22.04 system python is 3.10 — use uv-managed.
+kms_python_version: "3.12"
+kms_service_user: "{{ ansible_user }}"
+
+# VieNeu-TTS v3 Turbo CPU (ONNX) — official README Option 1 (not Docker GPU).
 vieneu_enabled: true
+vieneu_user: "{{ kms_service_user }}"
+vieneu_workdir: "{{ kms_install_root }}/vieneu"
+vieneu_repo_dir: "{{ kms_install_root }}/VieNeu-TTS"
+vieneu_hf_cache: "{{ vieneu_workdir }}/.cache/huggingface"
+vieneu_git_url: https://github.com/pnnbao97/VieNeu-TTS.git
+vieneu_git_version: main
+vieneu_default_voice: truc_ly
+# Kept for override docs; systemd template uses openai_server.py
+vieneu_exec_start: "{{ vieneu_repo_dir }}/.venv/bin/python {{ vieneu_workdir }}/openai_server.py --host 127.0.0.1 --port {{ vieneu_port }}"
 
 gateway_env_sample: "{{ playbook_dir }}/../../docs/env-samples/prod.gateway.env.sample"
 core_env_sample: "{{ playbook_dir }}/../../docs/env-samples/prod.core.env.sample"

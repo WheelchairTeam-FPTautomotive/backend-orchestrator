@@ -143,11 +143,16 @@ resource "aws_iam_role_policy" "kms_ec2_bedrock_s3" {
         Resource = "*"
       },
       {
-        Sid    = "ManualsS3Read"
+        Sid    = "ManualsS3ReadWrite"
         Effect = "Allow"
         Action = [
           "s3:GetObject",
-          "s3:ListBucket"
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:AbortMultipartUpload",
+          "s3:ListBucket",
+          "s3:ListBucketMultipartUploads",
+          "s3:ListMultipartUploadParts"
         ]
         Resource = var.enable_manuals_bucket ? [
           aws_s3_bucket.manuals[0].arn,
@@ -183,7 +188,7 @@ resource "aws_instance" "kms_app" {
   iam_instance_profile        = local.ec2_instance_profile != "" ? local.ec2_instance_profile : null
 
   root_block_device {
-    volume_size = 40
+    volume_size = 80
     volume_type = "gp3"
   }
 

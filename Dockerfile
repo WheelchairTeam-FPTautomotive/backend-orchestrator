@@ -44,8 +44,9 @@ ENV PATH="/app/.venv/bin:$PATH" \
 COPY src/ ./src/
 COPY scripts/ ./scripts/
 
-# Ensure the entrypoint script is executable.
-RUN chmod +x /app/scripts/entrypoint.sh
+# Ensure the entrypoint script is executable and LF (Windows sync can leave CRLF).
+RUN chmod +x /app/scripts/entrypoint.sh && \
+    sed -i 's/\r$//' /app/scripts/entrypoint.sh
 
 # Run as the non-root user. All application logs are emitted to stdout so no
 # local log directory or runtime permission fixes are required.

@@ -10,8 +10,12 @@ enable_aoss           = false
 deploy_sagemaker_model = false
 
 ec2_instance_type = "t3.xlarge"
-# ec2_key_name   = "your-keypair"
+# REQUIRED before apply — EC2 SSH key pair NAME in ap-southeast-2 (not Access Key ID):
+# 1) Console: EC2 → Key pairs → Create (RSA, .pem)  OR  aws ec2 create-key-pair ...
+# 2) Set the name here; keep the .pem for Ansible SSH
+# ec2_key_name     = "kms-ec2"
 # ssh_ingress_cidr = "x.x.x.x/32"
+# AWS API creds: aws login → aws configure export-credentials --format env (shell only — NOT here).
 # If iam:CreateRole is blocked by hackathon IAM:
 # create_ec2_instance_profile = false
 # existing_ec2_instance_profile_name = "YourInstanceProfile"

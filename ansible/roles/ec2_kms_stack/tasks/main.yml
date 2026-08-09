@@ -5,10 +5,14 @@
 - name: Include env file deploy
   ansible.builtin.import_tasks: env.yml
 
+- name: Include host venvs (native)
+  ansible.builtin.import_tasks: venvs.yml
+  when: not (use_docker_compose | bool)
+
 - name: Include gateway+Core services
   ansible.builtin.import_tasks: services.yml
 
-- name: Include VieNeu systemd unit
+- name: Include VieNeu systemd unit (CPU v3 Turbo ONNX)
   ansible.builtin.import_tasks: vieneu.yml
   when: vieneu_enabled | bool
 

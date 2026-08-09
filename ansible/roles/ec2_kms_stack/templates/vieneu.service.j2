@@ -1,19 +1,22 @@
 [Unit]
-Description=KMS VieNeu TTS (Edge race fallback)
+Description=KMS VieNeu TTS v3 Turbo (CPU ONNX OpenAI server)
 After=network.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 User={{ vieneu_user }}
-WorkingDirectory={{ vieneu_workdir }}
-ExecStart={{ vieneu_exec_start }}
-Restart=on-failure
-RestartSec=5
+Group={{ vieneu_user }}
+WorkingDirectory={{ vieneu_repo_dir }}
 Environment=HOME={{ vieneu_workdir }}
-
-# Override ExecStart via drop-in if the VieNeu binary path differs:
-# /etc/systemd/system/vieneu.service.d/override.conf
+Environment=HF_HOME={{ vieneu_hf_cache }}
+Environment=PATH={{ vieneu_repo_dir }}/.venv/bin:/usr/local/bin:/usr/bin
+# Official CPU path: v3 Turbo ONNX via scripts/vieneu_openai_server.py
+ExecStart={{ vieneu_repo_dir }}/.venv/bin/python {{ vieneu_workdir }}/openai_server.py --host 127.0.0.1 --port {{ vieneu_port }}
+Restart=on-failure
+RestartSec=8
+# Model load can be slow on first boot
+TimeoutStartSec=300
 
 [Install]
 WantedBy=multi-user.target

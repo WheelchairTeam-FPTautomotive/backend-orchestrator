@@ -1,9 +1,7 @@
 ---
-# Compatibility entry — defaults to Method A (native).
-# Prefer explicit playbooks:
-#   playbooks/deploy-ec2-native.yml   # Method A
-#   playbooks/deploy-ec2-compose.yml  # Method B
-- name: Deploy KMS stack on EC2 (native default)
+# Method A (recommended for single EC2): native systemd + uv venv.
+# No Docker on the box. Acc→Lat→Budget lock.
+- name: Deploy KMS on EC2 — native systemd
   hosts: kms_ec2
   become: true
   gather_facts: "{{ gather_facts | default(true) | bool }}"

@@ -1,14 +1,17 @@
 [Unit]
-Description=KMS Gateway Orchestrator
+Description=KMS Gateway Orchestrator (native)
 After=network.target kms-core.service
 Wants=kms-core.service
 
 [Service]
 Type=simple
+User={{ kms_service_user }}
+Group={{ kms_service_user }}
 WorkingDirectory={{ kms_gateway_dir }}
 EnvironmentFile={{ kms_env_dir }}/gateway.env
+Environment=PATH={{ kms_gateway_dir }}/.venv/bin:/usr/local/bin:/usr/bin
 # STM: workers must stay 1
-ExecStart=/usr/bin/env python3 -m uvicorn main:app --app-dir src --host 0.0.0.0 --port {{ kms_gateway_port }} --workers 1
+ExecStart={{ kms_gateway_dir }}/.venv/bin/python -m uvicorn main:app --app-dir src --host 0.0.0.0 --port {{ kms_gateway_port }} --workers 1
 Restart=on-failure
 RestartSec=5
 

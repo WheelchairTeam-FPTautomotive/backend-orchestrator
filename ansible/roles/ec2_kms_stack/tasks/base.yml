@@ -1,5 +1,5 @@
 ---
-- name: Install base packages
+- name: Install base packages (always)
   ansible.builtin.apt:
     name:
       - ca-certificates
@@ -8,22 +8,37 @@
       - tmux
       - python3
       - python3-pip
+      - python3-venv
+      - rsync
+      - build-essential
+    state: present
+    update_cache: true
+  when: ansible_facts['os_family'] | default('Debian') == "Debian"
+
+- name: Install Docker packages (Method B — Compose only)
+  ansible.builtin.apt:
+    name:
       - docker.io
       - docker-compose-v2
     state: present
     update_cache: true
-  when: ansible_os_family == "Debian"
+  when:
+    - use_docker_compose | bool
+    - ansible_facts['os_family'] | default('Debian') == "Debian"
 
-- name: Ensure Docker started
+- name: Ensure Docker started (Method B)
   ansible.builtin.service:
     name: docker
     state: started
     enabled: true
+  when: use_docker_compose | bool
 
 - name: Create install directories
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
+    owner: "{{ kms_service_user }}"
+    group: "{{ kms_service_user }}"
     mode: "0755"
   loop:
     - "{{ kms_install_root }}"
@@ -41,6 +56,8 @@
       - "--exclude=.venv"
       - "--exclude=__pycache__"
       - "--exclude=.git"
+      - "--exclude=terraform/.terraform"
+  become: false
   when: kms_gateway_src | length > 0
 
 - name: Sync Core AI tree from control node
@@ -52,4 +69,14 @@
       - "--exclude=.venv"
       - "--exclude=__pycache__"
       - "--exclude=.git"
+  become: false
   when: kms_core_src | length > 0
+
+- name: Fix CRLF on shell scripts after Windows sync
+  ansible.builtin.shell: |
+    find "{{ kms_gateway_dir }}/scripts" "{{ kms_core_dir }}/scripts" \
+      -name '*.sh' -exec sed -i 's/\r$//' {} \; 2>/dev/null || true
+  args:
+    executable: /bin/bash
+  changed_when: false
+  when: kms_gateway_src | length > 0 or kms_core_src | length > 0

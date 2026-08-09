@@ -2,3 +2,9 @@
 - name: Reload systemd
   ansible.builtin.systemd:
     daemon_reload: true
+
+- name: Restart gateway after VieNeu
+  ansible.builtin.systemd:
+    name: kms-gateway.service
+    state: restarted
+  when: not (use_docker_compose | bool)
