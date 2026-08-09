@@ -1,11 +1,19 @@
 ---
-# Entry-point playbook: deploy the backend-orchestrator container to ECS Fargate.
+# LEGACY / SUPERSEDED for v1 product deploy (Acc→Lat→Budget lock).
+# Prefer: playbooks/deploy-ec2-stack.yml + role ec2_kms_stack
+# Use this playbook only when Terraform enable_ecs=true (Fargate path).
 - name: Deploy backend-orchestrator to ECS Fargate
   hosts: localhost
   connection: local
   gather_facts: false
 
   tasks:
+    - name: Warn — legacy ECS path
+      ansible.builtin.debug:
+        msg: >-
+          Locked v1 deploy uses playbooks/deploy-ec2-stack.yml.
+          Continuing ECS Fargate deploy only if that is intentional.
+
     - name: Load Terraform outputs as JSON
       ansible.builtin.command:
         cmd: terraform.exe output -json

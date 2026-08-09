@@ -1,0 +1,30 @@
+---
+- name: Install systemd units for gateway and Core (non-Compose path)
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    mode: "0644"
+  loop:
+    - kms-gateway.service
+    - kms-core.service
+  when: not (use_docker_compose | bool)
+  notify: Reload systemd
+
+- name: Enable and start gateway+Core systemd
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  loop:
+    - kms-gateway.service
+    - kms-core.service
+  when: not (use_docker_compose | bool)
+
+- name: Docker Compose up gateway+Core (workers=1 via Dockerfile CMD)
+  ansible.builtin.command:
+    cmd: docker compose up -d --build
+    chdir: "{{ kms_gateway_dir }}"
+  when: use_docker_compose | bool
+  register: compose_up
+  changed_when: "'Started' in compose_up.stdout or 'Creating' in compose_up.stdout or compose_up.rc == 0"

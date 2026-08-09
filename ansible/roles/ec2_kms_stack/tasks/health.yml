@@ -1,0 +1,25 @@
+---
+- name: Wait for Core health
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ kms_core_port }}/api/v1/health"
+    status_code: 200
+  register: core_health
+  retries: 30
+  delay: 5
+  until: core_health.status == 200
+
+- name: Wait for gateway health
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ kms_gateway_port }}/api/v1/health"
+    status_code: 200
+  register: gw_health
+  retries: 30
+  delay: 5
+  until: gw_health.status == 200
+
+- name: Check VieNeu port listening
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ vieneu_port }}"
+    timeout: 60
+  when: vieneu_enabled | bool

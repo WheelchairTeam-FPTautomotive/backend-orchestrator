@@ -1,28 +1,28 @@
-aws_region         = "us-east-1"
-project_name       = "backend-orchestrator"
-environment        = "dev"
-vpc_cidr           = "10.0.0.0/16"
-availability_zones = ["us-east-1a", "us-east-1b"]
-public_subnet_cidrs  = ["10.0.1.0/24", "10.0.2.0/24"]
-private_subnet_cidrs = ["10.0.3.0/24", "10.0.4.0/24"]
+# Locked v1 defaults (Acc→Lat→Budget): one EC2 + manuals S3; no AOSS/ECS/SageMaker.
+aws_region   = "ap-southeast-2"
+project_name = "backend-orchestrator"
+environment  = "dev"
 
-container_port = 8000
-image_tag      = "latest"
-desired_count  = 1
-fargate_cpu    = 256
-fargate_memory = 512
+enable_ec2            = true
+enable_manuals_bucket = true
+enable_ecs            = false
+enable_aoss           = false
+deploy_sagemaker_model = false
 
-log_level   = "INFO"
-core_ai_url = "http://CHANGE_ME:8001/api/v1/search"
+ec2_instance_type = "t3.xlarge"
+# ec2_key_name   = "your-keypair"
+# ssh_ingress_cidr = "x.x.x.x/32"
+# If iam:CreateRole is blocked by hackathon IAM:
+# create_ec2_instance_profile = false
+# existing_ec2_instance_profile_name = "YourInstanceProfile"
 
-# Replace with the real key. This value is stored in AWS Secrets Manager.
-openai_api_key = "sk-..."
+bedrock_model_id = "nvidia.nemotron-super-3-120b"
+core_ai_url      = "http://127.0.0.1:8001/api/v1/search"
 
-# --- SageMaker GPU (issues #12 / #17) — keep deploy_sagemaker_model=false until mentor IAM ---
-# Local Ollama freeze: qwen2.5:7b-instruct ↔ cloud HF AWQ id (behavior parity).
-sagemaker_model_id              = "Qwen/Qwen2.5-7B-Instruct-AWQ"
-sagemaker_instance_type         = "ml.g4dn.xlarge"
-sagemaker_inference_ami_version = "al2-ami-sagemaker-inference-gpu-3-1" # required for cu130 images
-deploy_sagemaker_model          = false
-# Hackathon users lack iam:CreateRole — set a pre-existing role ARN before apply:
-# sagemaker_execution_role_arn  = "arn:aws:iam::ACCOUNT:role/YourSageMakerExecutionRole"
+# manuals_bucket_name = "your-unique-manuals-bucket-name"
+
+# --- Legacy (keep false for v1) ---
+# enable_ecs  = true
+# enable_aoss = true
+# openai_api_key = "sk-..."
+# sagemaker_model_id = "Qwen/Qwen2.5-7B-Instruct-AWQ"

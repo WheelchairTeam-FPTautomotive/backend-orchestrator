@@ -2,9 +2,9 @@
 # General
 # ------------------------------------------------------------------------------
 variable "aws_region" {
-  description = "AWS region for all resources"
+  description = "AWS region for all resources (locked: Sydney)"
   type        = string
-  default     = "us-east-1"
+  default     = "ap-southeast-2"
 }
 
 variable "project_name" {
@@ -19,8 +19,29 @@ variable "environment" {
   default     = "dev"
 }
 
+variable "bedrock_model_id" {
+  description = "Locked Bedrock answer model id (tag + docs). Verify inference profile in Console if invoke fails."
+  type        = string
+  default     = "nvidia.nemotron-super-3-120b"
+}
+
 # ------------------------------------------------------------------------------
-# Network
+# Feature gates (v1 Budget lock defaults)
+# ------------------------------------------------------------------------------
+variable "enable_ecs" {
+  description = "Provision ECS Fargate + ALB path (LEGACY; default off)"
+  type        = bool
+  default     = false
+}
+
+variable "enable_aoss" {
+  description = "Provision OpenSearch Serverless (LEGACY; default off — avoids OCU)"
+  type        = bool
+  default     = false
+}
+
+# ------------------------------------------------------------------------------
+# Network (legacy ECS / AOSS / SageMaker VPC)
 # ------------------------------------------------------------------------------
 variable "vpc_cidr" {
   description = "CIDR block for the VPC"
@@ -31,7 +52,7 @@ variable "vpc_cidr" {
 variable "availability_zones" {
   description = "List of availability zones"
   type        = list(string)
-  default     = ["us-east-1a", "us-east-1b"]
+  default     = ["ap-southeast-2a", "ap-southeast-2b"]
 }
 
 variable "public_subnet_cidrs" {
@@ -47,7 +68,7 @@ variable "private_subnet_cidrs" {
 }
 
 # ------------------------------------------------------------------------------
-# ECS / Container
+# ECS / Container (legacy)
 # ------------------------------------------------------------------------------
 variable "container_port" {
   description = "Port exposed by the backend-orchestrator container"
@@ -86,22 +107,21 @@ variable "log_level" {
 }
 
 variable "core_ai_url" {
-  description = "URL of the downstream KMS Core AI RAG service"
+  description = "URL of the downstream KMS Core AI RAG service (same-box EC2 default)"
   type        = string
-  default     = "http://CHANGE_ME:8001/api/v1/search"
+  default     = "http://127.0.0.1:8001/api/v1/search"
 }
 
 variable "openai_api_key" {
-  description = "OpenAI API key stored in Secrets Manager (placeholder is safe when the app does not call OpenAI directly)"
+  description = "Optional OpenAI API key for legacy ECS Secrets Manager (not required for Bedrock path)"
   type        = string
   sensitive   = true
   default     = "placeholder-not-configured"
 }
 
 # ------------------------------------------------------------------------------
-# SageMaker / Billing
+# SageMaker / Billing (Budget fallback — keep deploy_sagemaker_model=false)
 # ------------------------------------------------------------------------------
-# MODIFIED: Qwen2.5-7B-Instruct-AWQ for g4dn 16GB VRAM (FP16 needs ml.g5.xlarge)
 variable "sagemaker_model_id" {
   description = "Hugging Face model ID for the SageMaker LLM endpoint (AWQ for ml.g4dn.xlarge)"
   type        = string
@@ -115,14 +135,13 @@ variable "sagemaker_container_image" {
 }
 
 variable "sagemaker_instance_type" {
-  description = "SageMaker endpoint instance type (g4dn+AWQ default; use ml.g5.xlarge for FP16)"
+  description = "SageMaker endpoint instance type"
   type        = string
   default     = "ml.g4dn.2xlarge"
 }
 
-# MODIFIED: cu130 images require InferenceAmiVersion or container dies with no logs
 variable "sagemaker_inference_ami_version" {
-  description = "Required for huggingface-vllm cu130+ tags (HF/AWS guidance)"
+  description = "Required for huggingface-vllm cu130+ tags"
   type        = string
   default     = "al2-ami-sagemaker-inference-gpu-3-1"
 }
@@ -156,4 +175,3 @@ variable "sagemaker_model_bucket_name" {
   type        = string
   default     = "backend-orchestrator-models-808454010747"
 }
-

@@ -1,8 +1,4 @@
----
-# Plain (non-secret) deployment variables.
-# These values are safe to keep unencrypted in version control.
-
-# AWS region where the ECS infrastructure was provisioned by Terraform.
+# AWS region for locked EC2 + Bedrock path (Sydney).
 aws_region: ap-southeast-2
 
 # Windows binary names used inside WSL (PowerShell is the primary shell; Terraform
@@ -21,3 +17,6 @@ health_check_delay: 5
 # Service stabilization polling settings.
 service_stabilization_retries: 20
 service_stabilization_delay: 5
+
+# Locked Bedrock answer model (verify inference profile in Console if invoke fails).
+bedrock_model_id: nvidia.nemotron-super-3-120b

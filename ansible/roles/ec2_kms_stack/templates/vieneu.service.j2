@@ -1,0 +1,19 @@
+[Unit]
+Description=KMS VieNeu TTS (Edge race fallback)
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ vieneu_user }}
+WorkingDirectory={{ vieneu_workdir }}
+ExecStart={{ vieneu_exec_start }}
+Restart=on-failure
+RestartSec=5
+Environment=HOME={{ vieneu_workdir }}
+
+# Override ExecStart via drop-in if the VieNeu binary path differs:
+# /etc/systemd/system/vieneu.service.d/override.conf
+
+[Install]
+WantedBy=multi-user.target

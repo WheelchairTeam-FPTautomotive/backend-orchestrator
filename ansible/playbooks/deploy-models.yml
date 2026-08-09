@@ -1,4 +1,6 @@
 ---
+# LEGACY / Budget-only: SageMaker Qwen is NOT the locked v1 answer path (Nemotron on Bedrock).
+# Prefer deploy-ec2-stack.yml. Keep deploy_sagemaker_model=false unless Acc+Budget override.
 # Entry-point playbook: deploy the SageMaker LLM model for backend-orchestrator.
 # This playbook is intentionally phased:
 #   1. Pre-flight checks (quota, existing endpoints, budget guard)

@@ -1,0 +1,13 @@
+---
+# Inventory for locked one-EC2 deploy.
+# Replace ansible_host / key / user before running deploy-ec2-stack.yml.
+all:
+  children:
+    kms_ec2:
+      hosts:
+        kms-app-1:
+          ansible_host: CHANGE_ME_EC2_PUBLIC_IP
+          ansible_user: ubuntu
+          ansible_ssh_private_key_file: ~/.ssh/kms-ec2.pem
+      vars:
+        ansible_python_interpreter: /usr/bin/python3

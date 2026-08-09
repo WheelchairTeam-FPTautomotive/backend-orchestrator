@@ -1,0 +1,14 @@
+---
+- name: Install Ollama (Budget fallback only)
+  ansible.builtin.shell: |
+    set -e
+    if ! command -v ollama >/dev/null 2>&1; then
+      curl -fsSL https://ollama.com/install.sh | sh
+    fi
+  args:
+    executable: /bin/bash
+
+- name: Pull Ollama Acc-fallback model
+  ansible.builtin.command: "ollama pull {{ ollama_model }}"
+  register: ollama_pull
+  changed_when: ollama_pull.rc == 0

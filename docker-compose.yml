@@ -1,13 +1,12 @@
-# Docker Compose manifest for the KMS Backend Orchestrator microservice stack.
-# Defines a custom bridge network so the gateway can reach the AI core container
-# by its service name (internal DNS).
+# Docker Compose — local same-box stack (gateway + Core).
+# VieNeu is NOT in Compose; on EC2 use systemd vieneu.service (see docs/DEPLOY_EC2.md).
 #
 # Usage:
 #   cp .env.example .env
+#   cp ../kms-core-ai/.env.example ../kms-core-ai/.env   # edit for local Acc freeze or Bedrock
 #   docker compose up --build
 #
-# The hackathon starter-kit expects port 8000 exposed, .env loaded,
-# ./logs mounted, and a health check every 30 seconds.
+# STM: gateway CMD pins --workers 1 (do not raise).
 
 services:
   backend-orchestrator:
@@ -20,7 +19,7 @@ services:
     env_file:
       - .env
     environment:
-      # Inside the custom network the AI core is reachable by service name.
+      # Compose DNS overrides same-box 127.0.0.1 from .env.example
       CORE_AI_URL: "http://kms-core-ai:8001/api/v1/search"
     networks:
       - kms-network
@@ -28,8 +27,6 @@ services:
       kms-core-ai:
         condition: service_healthy
     volumes:
-      # Persist rotating logs on the host for easy debugging.
-      # The entrypoint fixes ownership so the non-root app user can write here.
       - ./logs:/app/logs
     restart: unless-stopped
     healthcheck:
@@ -46,8 +43,13 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8001:8001"
+    # --- START MODIFICATION ---
+    # Core uses its own env (Bedrock/Chroma), not the gateway .env
     env_file:
-      - .env
+      - ../kms-core-ai/.env
+    # --- END MODIFICATION ---
+    volumes:
+      - ../kms-core-ai/data:/app/data
     networks:
       - kms-network
     restart: unless-stopped

@@ -7,10 +7,6 @@
 # model, endpoint configuration, and endpoint itself.
 # ------------------------------------------------------------------------------
 
-data "aws_caller_identity" "current" {}
-
-data "aws_region" "current" {}
-
 locals {
   # Drop the HF author prefix (e.g. "TheBloke/") and remove any non-alphanumeric
   # characters so that generated names stay under AWS 63-character limits.
@@ -197,9 +193,10 @@ resource "aws_iam_role_policy" "ecs_task_sagemaker_invoke" {
 # Endpoint Networking
 # ------------------------------------------------------------------------------
 resource "aws_security_group" "sagemaker_endpoint" {
+  count       = var.deploy_sagemaker_model ? 1 : 0
   name_prefix = "${local.short_name}-sagemaker-ep-"
   description = "SageMaker endpoint instance network access"
-  vpc_id      = module.vpc.vpc_id
+  vpc_id      = module.vpc[0].vpc_id
 
   ingress {
     from_port   = 0
@@ -221,16 +218,17 @@ resource "aws_security_group" "sagemaker_endpoint" {
 }
 
 resource "aws_security_group" "sagemaker_runtime_vpc_endpoint" {
+  count       = var.deploy_sagemaker_model ? 1 : 0
   name_prefix = "${local.short_name}-sagemaker-runtime-vpce-"
   description = "SageMaker Runtime VPC Endpoint - ingress from ECS tasks only"
-  vpc_id      = module.vpc.vpc_id
+  vpc_id      = module.vpc[0].vpc_id
 
   ingress {
-    from_port       = 443
-    to_port         = 443
-    protocol        = "tcp"
-    security_groups = [aws_security_group.ecs_tasks.id]
-    description     = "HTTPS from ECS tasks only"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = [var.vpc_cidr]
+    description = "HTTPS from VPC (SageMaker runtime VPCE)"
   }
 
   egress {
@@ -244,20 +242,22 @@ resource "aws_security_group" "sagemaker_runtime_vpc_endpoint" {
 }
 
 resource "aws_vpc_endpoint" "s3" {
-  vpc_id            = module.vpc.vpc_id
+  count             = var.deploy_sagemaker_model ? 1 : 0
+  vpc_id            = module.vpc[0].vpc_id
   service_name      = "com.amazonaws.${var.aws_region}.s3"
   vpc_endpoint_type = "Gateway"
-  route_table_ids   = module.vpc.private_route_table_ids
+  route_table_ids   = module.vpc[0].private_route_table_ids
 
   tags = local.common_tags
 }
 
 resource "aws_vpc_endpoint" "sagemaker_runtime" {
-  vpc_id              = module.vpc.vpc_id
+  count               = var.deploy_sagemaker_model ? 1 : 0
+  vpc_id              = module.vpc[0].vpc_id
   service_name        = "com.amazonaws.${var.aws_region}.sagemaker.runtime"
   vpc_endpoint_type   = "Interface"
-  subnet_ids          = module.vpc.private_subnets
-  security_group_ids  = [aws_security_group.sagemaker_runtime_vpc_endpoint.id]
+  subnet_ids          = module.vpc[0].private_subnets
+  security_group_ids  = [aws_security_group.sagemaker_runtime_vpc_endpoint[0].id]
   private_dns_enabled = true
 
   tags = merge(local.common_tags, { Name = "${local.short_name}-sagemaker-runtime-vpce" })
@@ -292,8 +292,8 @@ resource "aws_sagemaker_model" "llm" {
   }
 
   vpc_config {
-    security_group_ids = [aws_security_group.sagemaker_endpoint.id]
-    subnets            = module.vpc.private_subnets
+    security_group_ids = [aws_security_group.sagemaker_endpoint[0].id]
+    subnets            = module.vpc[0].private_subnets
   }
 
   tags = local.common_tags

@@ -1,0 +1,20 @@
+---
+- name: Include base host setup
+  ansible.builtin.import_tasks: base.yml
+
+- name: Include env file deploy
+  ansible.builtin.import_tasks: env.yml
+
+- name: Include gateway+Core services
+  ansible.builtin.import_tasks: services.yml
+
+- name: Include VieNeu systemd unit
+  ansible.builtin.import_tasks: vieneu.yml
+  when: vieneu_enabled | bool
+
+- name: Include optional Ollama Budget fallback
+  ansible.builtin.import_tasks: ollama.yml
+  when: enable_ollama_fallback | bool
+
+- name: Include health checks
+  ansible.builtin.import_tasks: health.yml

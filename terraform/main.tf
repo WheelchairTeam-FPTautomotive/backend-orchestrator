@@ -10,12 +10,16 @@ locals {
     Environment = var.environment
     ManagedBy   = "terraform"
   }
+
+  # Legacy network (NAT) only when ECS, AOSS, or SageMaker needs the custom VPC.
+  need_legacy_vpc = var.enable_ecs || var.enable_aoss || var.deploy_sagemaker_model
 }
 
 # ------------------------------------------------------------------------------
 # Container Registry
 # ------------------------------------------------------------------------------
 resource "aws_ecr_repository" "backend_orchestrator" {
+  count                = var.enable_ecs ? 1 : 0
   name                 = var.project_name
   image_tag_mutability = "MUTABLE"
   force_delete         = true
@@ -31,6 +35,7 @@ resource "aws_ecr_repository" "backend_orchestrator" {
 # Networking
 # ------------------------------------------------------------------------------
 module "vpc" {
+  count   = local.need_legacy_vpc ? 1 : 0
   source  = "terraform-aws-modules/vpc/aws"
   version = "~> 5.0"
 
@@ -41,7 +46,7 @@ module "vpc" {
   public_subnets  = var.public_subnet_cidrs
   private_subnets = var.private_subnet_cidrs
 
-  enable_nat_gateway   = true
+  enable_nat_gateway   = var.enable_ecs || var.deploy_sagemaker_model
   single_nat_gateway   = true
   enable_dns_hostnames = true
   enable_dns_support   = true
@@ -61,9 +66,10 @@ module "vpc" {
 # Security Groups
 # ------------------------------------------------------------------------------
 resource "aws_security_group" "alb" {
+  count       = var.enable_ecs ? 1 : 0
   name_prefix = "${local.short_name}-alb-"
   description = "Allow HTTP from the internet to the ALB"
-  vpc_id      = module.vpc.vpc_id
+  vpc_id      = module.vpc[0].vpc_id
 
   ingress {
     from_port   = 80
@@ -84,15 +90,16 @@ resource "aws_security_group" "alb" {
 }
 
 resource "aws_security_group" "ecs_tasks" {
+  count       = var.enable_ecs ? 1 : 0
   name_prefix = "${local.short_name}-ecs-tasks-"
   description = "Allow traffic from ALB to ECS Fargate tasks"
-  vpc_id      = module.vpc.vpc_id
+  vpc_id      = module.vpc[0].vpc_id
 
   ingress {
     from_port       = var.container_port
     to_port         = var.container_port
     protocol        = "tcp"
-    security_groups = [aws_security_group.alb.id]
+    security_groups = [aws_security_group.alb[0].id]
     description     = "Traffic from ALB"
   }
 
@@ -107,16 +114,17 @@ resource "aws_security_group" "ecs_tasks" {
 }
 
 resource "aws_security_group" "opensearch_endpoint" {
+  count       = var.enable_aoss ? 1 : 0
   name_prefix = "${local.short_name}-opensearch-"
   description = "Allow HTTPS from ECS tasks to OpenSearch Serverless VPC endpoint"
-  vpc_id      = module.vpc.vpc_id
+  vpc_id      = module.vpc[0].vpc_id
 
   ingress {
-    from_port       = 443
-    to_port         = 443
-    protocol        = "tcp"
-    security_groups = [aws_security_group.ecs_tasks.id]
-    description     = "HTTPS from ECS tasks"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = [var.vpc_cidr]
+    description = "HTTPS from VPC (AOSS VPC endpoint)"
   }
 
   egress {
@@ -133,15 +141,16 @@ resource "aws_security_group" "opensearch_endpoint" {
 # Application Load Balancer
 # ------------------------------------------------------------------------------
 module "alb" {
+  count   = var.enable_ecs ? 1 : 0
   source  = "terraform-aws-modules/alb/aws"
   version = "~> 9.0"
 
   name = "${local.short_name}-alb"
 
   load_balancer_type = "application"
-  vpc_id             = module.vpc.vpc_id
-  subnets            = module.vpc.public_subnets
-  security_groups    = [aws_security_group.alb.id]
+  vpc_id             = module.vpc[0].vpc_id
+  subnets            = module.vpc[0].public_subnets
+  security_groups    = [aws_security_group.alb[0].id]
 
   listeners = {
     http = {
@@ -183,18 +192,21 @@ module "alb" {
 # Logging & Secrets
 # ------------------------------------------------------------------------------
 resource "aws_cloudwatch_log_group" "ecs" {
+  count             = var.enable_ecs ? 1 : 0
   name              = "/ecs/${local.short_name}"
   retention_in_days = 7
   tags              = local.common_tags
 }
 
 resource "aws_cloudwatch_log_group" "ecs_service" {
+  count             = var.enable_ecs ? 1 : 0
   name              = "/ecs/${local.short_name}-service"
   retention_in_days = 7
   tags              = local.common_tags
 }
 
 resource "aws_secretsmanager_secret" "openai_api_key" {
+  count                   = var.enable_ecs ? 1 : 0
   name                    = "${local.short_name}-openai-api-key"
   description             = "OpenAI API key for the backend orchestrator"
   recovery_window_in_days = 7
@@ -202,7 +214,8 @@ resource "aws_secretsmanager_secret" "openai_api_key" {
 }
 
 resource "aws_secretsmanager_secret_version" "openai_api_key" {
-  secret_id     = aws_secretsmanager_secret.openai_api_key.id
+  count         = var.enable_ecs ? 1 : 0
+  secret_id     = aws_secretsmanager_secret.openai_api_key[0].id
   secret_string = var.openai_api_key
 }
 
@@ -210,6 +223,7 @@ resource "aws_secretsmanager_secret_version" "openai_api_key" {
 # ECS Cluster
 # ------------------------------------------------------------------------------
 module "ecs_cluster" {
+  count   = var.enable_ecs ? 1 : 0
   source  = "terraform-aws-modules/ecs/aws"
   version = "~> 5.0"
 
@@ -230,18 +244,19 @@ module "ecs_cluster" {
 # ECS Service (Fargate)
 # ------------------------------------------------------------------------------
 module "ecs_service" {
+  count   = var.enable_ecs ? 1 : 0
   source  = "terraform-aws-modules/ecs/aws//modules/service"
   version = "~> 5.0"
 
   name        = "${local.short_name}-service"
-  cluster_arn = module.ecs_cluster.cluster_arn
+  cluster_arn = module.ecs_cluster[0].cluster_arn
 
   cpu    = var.fargate_cpu
   memory = var.fargate_memory
 
   desired_count      = var.desired_count
-  subnet_ids         = module.vpc.private_subnets
-  security_group_ids = [aws_security_group.ecs_tasks.id]
+  subnet_ids         = module.vpc[0].private_subnets
+  security_group_ids = [aws_security_group.ecs_tasks[0].id]
   assign_public_ip   = false
 
   network_mode             = "awsvpc"
@@ -256,7 +271,7 @@ module "ecs_service" {
   container_definitions = {
     backend-orchestrator = {
       name      = "backend-orchestrator"
-      image     = "${aws_ecr_repository.backend_orchestrator.repository_url}:${var.image_tag}"
+      image     = "${aws_ecr_repository.backend_orchestrator[0].repository_url}:${var.image_tag}"
       essential = true
 
       readonly_root_filesystem = false
@@ -282,21 +297,21 @@ module "ecs_service" {
         { name = "SAGEMAKER_LLM_ENDPOINT_NAME", value = var.deploy_sagemaker_model ? aws_sagemaker_endpoint.llm[0].name : "" },
         { name = "SAGEMAKER_REGION", value = var.aws_region },
         { name = "SAGEMAKER_USE_VPC_ENDPOINT", value = "true" },
-        { name = "SAGEMAKER_VPC_ENDPOINT_URL", value = "https://${aws_vpc_endpoint.sagemaker_runtime.dns_entry[0].dns_name}" },
+        { name = "SAGEMAKER_VPC_ENDPOINT_URL", value = "https://${aws_vpc_endpoint.sagemaker_runtime[0].dns_entry[0].dns_name}" },
         { name = "SAGEMAKER_MODEL_PATH", value = "/opt/ml/model" }
       ]
 
       secrets = [
         {
           name      = "OPENAI_API_KEY"
-          valueFrom = aws_secretsmanager_secret.openai_api_key.arn
+          valueFrom = aws_secretsmanager_secret.openai_api_key[0].arn
         }
       ]
 
       log_configuration = {
         logDriver = "awslogs"
         options = {
-          "awslogs-group"         = aws_cloudwatch_log_group.ecs.name
+          "awslogs-group"         = aws_cloudwatch_log_group.ecs[0].name
           "awslogs-region"        = var.aws_region
           "awslogs-stream-prefix" = "ecs"
         }
@@ -314,7 +329,7 @@ module "ecs_service" {
 
   load_balancer = {
     service = {
-      target_group_arn = module.alb.target_groups["ecs"].arn
+      target_group_arn = module.alb[0].target_groups["ecs"].arn
       container_name   = "backend-orchestrator"
       container_port   = var.container_port
     }
@@ -327,13 +342,15 @@ module "ecs_service" {
 # OpenSearch Serverless
 # ------------------------------------------------------------------------------
 resource "aws_opensearchserverless_vpc_endpoint" "this" {
+  count              = var.enable_aoss ? 1 : 0
   name               = "${local.short_name}-vpce"
-  vpc_id             = module.vpc.vpc_id
-  subnet_ids         = module.vpc.private_subnets
-  security_group_ids = [aws_security_group.opensearch_endpoint.id]
+  vpc_id             = module.vpc[0].vpc_id
+  subnet_ids         = module.vpc[0].private_subnets
+  security_group_ids = [aws_security_group.opensearch_endpoint[0].id]
 }
 
 resource "aws_opensearchserverless_security_policy" "encryption" {
+  count       = var.enable_aoss ? 1 : 0
   name        = "${local.short_name}-enc"
   type        = "encryption"
   description = "Encryption policy for the search collection"
@@ -352,6 +369,7 @@ resource "aws_opensearchserverless_security_policy" "encryption" {
 }
 
 resource "aws_opensearchserverless_security_policy" "network" {
+  count       = var.enable_aoss ? 1 : 0
   name        = "${local.short_name}-net"
   type        = "network"
   description = "Restrict collection access to the VPC endpoint"
@@ -369,13 +387,14 @@ resource "aws_opensearchserverless_security_policy" "network" {
       ]
       AllowFromPublic = false
       SourceVPCEs = [
-        aws_opensearchserverless_vpc_endpoint.this.id
+        aws_opensearchserverless_vpc_endpoint.this[0].id
       ]
     }
   ])
 }
 
 resource "aws_opensearchserverless_access_policy" "ecs_task" {
+  count       = var.enable_aoss ? 1 : 0
   name        = "${local.short_name}-data"
   type        = "data"
   description = "Grant ECS task role access to the search collection"
@@ -418,12 +437,13 @@ resource "aws_opensearchserverless_access_policy" "ecs_task" {
 }
 
 resource "aws_opensearchserverless_collection" "this" {
+  count            = var.enable_aoss ? 1 : 0
   name             = "${local.short_name}-search"
   type             = "SEARCH"
   standby_replicas = "DISABLED"
 
   depends_on = [
-    aws_opensearchserverless_security_policy.encryption,
-    aws_opensearchserverless_security_policy.network
+    aws_opensearchserverless_security_policy.encryption[0],
+    aws_opensearchserverless_security_policy.network[0]
   ]
 }

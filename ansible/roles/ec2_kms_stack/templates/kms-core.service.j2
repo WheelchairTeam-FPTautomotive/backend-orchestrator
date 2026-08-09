@@ -1,0 +1,14 @@
+[Unit]
+Description=KMS Core AI RAG
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory={{ kms_core_dir }}
+EnvironmentFile={{ kms_env_dir }}/core.env
+ExecStart=/usr/bin/env python3 -m uvicorn main:app --app-dir src --host 0.0.0.0 --port {{ kms_core_port }}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,9 @@
+---
+# Locked v1 product deploy: one EC2 — gateway + Core + Chroma + VieNeu (systemd).
+- name: Deploy KMS stack on EC2
+  hosts: kms_ec2
+  become: true
+  gather_facts: true
+
+  roles:
+    - role: ec2_kms_stack
