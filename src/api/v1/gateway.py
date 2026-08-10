@@ -12,7 +12,8 @@ import logging
 from services.voice_utils import transcribe_audio_bytes, synthesize_speech_bytes
 from services.intent_router import classify_intent
 from services.car_controller import DEFAULT_COMMAND_ID, get_command_id
-from services.text_norm import normalize_utterance
+from services.text_norm import normalize_utterance, normalize_for_routing
+from services.automotive_stt_correct import format_fixes
 from services.query_cache import QueryCache, query_cache
 from services.session_memory import session_memory, ttl_min_to_seconds
 import base64
@@ -321,11 +322,15 @@ async def route_text_query(
     ),
 ):
     # --- START MODIFICATION ---
-    # Ingress normalize once; language-aware cache + latency headers (#16).
-    # Ephemeral STM for RAG/FREE_TALK only (never CAR/REFUSED).
+    # Ingress: automotive STT term repair → tone-fold → intent (#STT-Correct)
     total_start = time.perf_counter()
-    raw_utterance = payload.query
-    normalized = normalize_utterance(raw_utterance)
+    original_utterance = payload.query
+    raw_utterance, normalized, stt_fixes = normalize_for_routing(original_utterance)
+    if stt_fixes:
+        logger.info(
+            f"[STT-Correct] raw={original_utterance!r} fixed={format_fixes(stt_fixes)} "
+            f"corrected={raw_utterance!r}"
+        )
     intent, intent_ms = classify_intent(raw_utterance, normalized=normalized)
     mode = _core_ai_mode_for_intent(intent)
     language = payload.language or "vi"
@@ -449,7 +454,7 @@ async def route_text_query(
         # --- END MODIFICATION ---
         core_ai_start = time.perf_counter()
         core_payload: dict = {
-            "query": payload.query,
+            "query": raw_utterance,
             "mode": mode,
             "language": language,
         }
@@ -486,7 +491,7 @@ async def route_text_query(
             session_active = stm_turns > 0
 
         body = QueryResponse(
-            query=data.get("query", payload.query),
+            query=data.get("query", raw_utterance),
             answer=answer_text,
             audio_base64=audio_b64,
             citations=data.get("citations", []),
@@ -525,7 +530,7 @@ async def route_text_query(
     # Soft timeout: demosafe 200 instead of raw 504
     except httpx.TimeoutException as e:
         logger.exception(f"[Gateway] Timeout connecting to Core AI: {e}")
-        soft = _timeout_soft_response(payload.query, language=language)
+        soft = _timeout_soft_response(raw_utterance, language=language)
         total_ms = int((time.perf_counter() - total_start) * 1000)
         headers = _latency_header_map(
             intent_ms=intent_ms,
@@ -610,13 +615,19 @@ async def route_voice_query(request: Request, file: UploadFile = File(...), lang
 
     core_ai_start = time.perf_counter()
     # --- START MODIFICATION ---
-    raw_utterance = transcript
-    normalized = normalize_utterance(raw_utterance)
+    original_utterance = transcript
+    raw_utterance, normalized, stt_fixes = normalize_for_routing(original_utterance)
+    if stt_fixes:
+        logger.info(
+            f"[STT-Correct] raw={original_utterance!r} fixed={format_fixes(stt_fixes)} "
+            f"corrected={raw_utterance!r}"
+        )
     intent, intent_ms = classify_intent(raw_utterance, normalized=normalized)
     mode = _core_ai_mode_for_intent(intent)
     logger.info(
         f"[Gateway] voice intent={intent} ({intent_ms}ms) mode={mode} "
-        f"transcript={raw_utterance!r} normalized={normalized!r}"
+        f"transcript={original_utterance!r} corrected={raw_utterance!r} "
+        f"normalized={normalized!r}"
     )
 
     try:
@@ -629,7 +640,7 @@ async def route_voice_query(request: Request, file: UploadFile = File(...), lang
             client: httpx.AsyncClient = request.app.state.http_client
             response = await client.post(
                 CORE_AI_URL,
-                json={"query": transcript, "mode": mode, "language": language},
+                json={"query": raw_utterance, "mode": mode, "language": language},
             )
             if response.status_code != 200:
                 logger.error(
