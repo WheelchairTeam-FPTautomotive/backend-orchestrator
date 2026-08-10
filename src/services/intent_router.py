@@ -15,9 +15,19 @@ load_dotenv()
 _fold_vi = normalize_utterance
 
 CAR_CONTROL_REGEX = (
-    r"\b(bat|tat|mo|dong|tang|giam|chinh|keo|len|xuong|gap)\b.*"
-    r"\b(dieu hoa|hvac|den|den pha|den hau|cua|kinh|nhac|am luong|quat|gio|"
-    r"nhiet do|ghe|cop|suoi|guong|mirror)\b"
+    r"\b(bat|tat|mo|dong|tang|giam|chinh|keo|len|xuong|gap|set|open|close)\b.*"
+    r"\b(dieu hoa|hvac|den|den pha|den hau|cua|cua\s*so|kinh|nhac|am luong|quat|gio|"
+    r"nhiet do|temperature|temp|ghe|cop|trunk|boot|suoi|guong|mirror|window|door)\b"
+)
+# Wave2: force RAG for OEM specs / EPB / defrost / TPMS / torque (never CAR)
+FORCE_RAG_REGEX = (
+    r"\b("
+    r"torque|nut\s*torque|wheel\s*nut|moc\s*siet|raptor|"
+    r"dac\s*ta|thong\s*so|"
+    r"epb|phanh\s*do(?:\s*dien\s*tu)?|phanh\s*dien\s*tu|phanh\s*tay|"
+    r"say\s*kinh|defrost|defroster|"
+    r"ap\s*suat|tpms|tire\s*pressure"
+    r")\b"
 )
 RAG_SEARCH_REGEX = (
     r"\b(huong dan|tai lieu|sua|loi|cach nao|lam sao|cach de|cach|bao hanh|"
@@ -36,10 +46,13 @@ FREE_TALK_REGEX = (
     r"good morning|good evening|"
     r"thoi tiet|weather|"
     r"co phieu|chung khoan|\bstocks?\b|"
-    r"cong thuc nau|nau pho|nau mon|"
+    r"cong thuc nau|nau pho|nau mon|cook\s+spaghetti|how\s+to\s+cook|"
     r"sap xep mang|viet ho tui|viet ho toi|"
     r"\bpython\b|\bjavascript\b|"
-    r"joke|ke cho|ke toi|dich giup|\bdich\b|an gi"
+    r"joke|ke cho|ke toi|dich giup|\bdich\b|an gi|"
+    r"main\s+purpose|purpose\s+in\s+this\s+vehicle|"
+    r"bai\s+toan|giai\s+ho|"
+    r"tro\s+ly|chao\s+tro"
     r")\b"
 )
 
@@ -90,6 +103,9 @@ def classify_intent_by_regex(text: str) -> str:
     if is_unsafe_utterance(folded, normalized=folded):
         return "REFUSED"
 
+    if re.search(FORCE_RAG_REGEX, folded):
+        return "RAG_SEARCH"
+
     if re.search(CAR_CONTROL_REGEX, folded):
         return "CAR_CONTROL"
 
@@ -121,6 +137,11 @@ def classify_intent_fast(
     if is_unsafe_utterance(query, normalized=folded):
         latency = int((time.perf_counter() - start_time) * 1000)
         return "REFUSED", latency
+
+    # 0b) Wave2: OEM/spec force-RAG before CAR (torque/EPB/defrost/TPMS)
+    if re.search(FORCE_RAG_REGEX, folded):
+        latency = int((time.perf_counter() - start_time) * 1000)
+        return "RAG_SEARCH", latency
 
     # 1) Direct control via shared command contract (single source of truth)
     cmd_id = get_command_id(folded, normalized=folded)
