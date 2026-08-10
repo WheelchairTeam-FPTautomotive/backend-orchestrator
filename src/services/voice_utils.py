@@ -58,24 +58,9 @@ def _pcm_to_wav(pcm_data: bytes, sample_rate: int = 24000, channels: int = 1, bi
 
 
 def _is_vietnamese(text: str, language: str) -> bool:
-    has_vi_diacritics = bool(
-        re.search(
-            r"[áàảãạăắằẳẵặâấầẩẫậđéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵ]",
-            text,
-            re.IGNORECASE,
-        )
-    )
-    # If the LLM replied with Vietnamese diacritics, it's Vietnamese.
-    if has_vi_diacritics:
-        return True
-    
-    # If there are no diacritics, but there are english alphabet letters, it's likely English.
-    # Because LLM output in Vietnamese would almost certainly contain diacritics.
-    has_letters = bool(re.search(r"[a-z]", text, re.IGNORECASE))
-    if has_letters:
-        return False
-        
-    return language == "vi"
+    # MODIFIED: TTS voice follows UI locale only (not answer-text diacritics)
+    _ = text
+    return not (language or "vi").lower().startswith("en")
 
 
 async def _synthesize_edge(text: str, *, is_vietnamese: bool) -> bytes | None:
@@ -296,7 +281,10 @@ async def transcribe_audio_bytes(
     """
     Transcribe audio via Google Web Speech API (free, no key).
 
-    language: UI locale ``vi`` | ``en`` → BCP-47 ``vi-VN`` | ``en-US``.
+    language: UI locale ``vi`` | ``en`` → BCP-47 ``vi-VN`` | ``en-US`` (primary).
+    Dual-pass with strict short-circuit: alternate locale only when primary
+    yields empty / UnknownValueError. Clean primary transcripts return immediately.
+
     Returns: (transcribed_text, latency_ms)
     """
     start_time = time.perf_counter()
@@ -304,53 +292,82 @@ async def transcribe_audio_bytes(
         return "", int((time.perf_counter() - start_time) * 1000)
 
     # --- START MODIFICATION ---
-    # Map cockpit UI locale to Google STT BCP-47 (was hardcoded vi-VN → EN garbage)
-    stt_locale = "en-US" if (language or "vi").lower().startswith("en") else "vi-VN"
-    # --- END MODIFICATION ---
+    primary = "en-US" if (language or "vi").lower().startswith("en") else "vi-VN"
+    alternate = "vi-VN" if primary == "en-US" else "en-US"
 
+    import speech_recognition as sr
+    import io
+
+    loop = asyncio.get_event_loop()
+
+    def run_sr(stt_locale: str) -> str:
+        recognizer = sr.Recognizer()
+        with sr.AudioFile(io.BytesIO(audio_bytes)) as source:
+            audio_data = recognizer.record(source)
+        return recognizer.recognize_google(audio_data, language=stt_locale)
+
+    def _elapsed_ms() -> int:
+        return int((time.perf_counter() - start_time) * 1000)
+
+    # Pass 1: UI locale — short-circuit on any non-empty transcript
     try:
-        import speech_recognition as sr
-        import io
-
-        loop = asyncio.get_event_loop()
-
-        def run_sr():
-            recognizer = sr.Recognizer()
-            # AudioFile expects PCM WAV (cockpit uploads audio/wav).
-            with sr.AudioFile(io.BytesIO(audio_bytes)) as source:
-                audio_data = recognizer.record(source)
-            return recognizer.recognize_google(audio_data, language=stt_locale)
-
-        transcribed_text = await loop.run_in_executor(None, run_sr)
-
-        latency = int((time.perf_counter() - start_time) * 1000)
+        primary_text = (await loop.run_in_executor(None, run_sr, primary) or "").strip()
+        if primary_text:
+            print(
+                f"[Google Free STT] primary={primary} result={primary_text!r} "
+                f"fallback=skipped chosen={primary} in {_elapsed_ms()}ms"
+            )
+            return primary_text, _elapsed_ms()
         print(
-            f"[Google Free STT] lang={stt_locale} Success! "
-            f"Transcribed: '{transcribed_text}' in {latency}ms"
+            f"[Google Free STT] primary={primary} result='' "
+            f"fallback=trying alternate={alternate}"
         )
-        return transcribed_text, latency
-
-    # --- START MODIFICATION ---
-    # UnknownValueError has empty str(e) — log type so ops can tell silence vs outage.
     except Exception as e:
-        import speech_recognition as sr
-
-        latency = int((time.perf_counter() - start_time) * 1000)
         err_name = type(e).__name__
         if isinstance(e, sr.UnknownValueError):
             print(
-                f"[Google Free STT] {err_name}: no intelligible speech "
-                f"(lang={stt_locale}, bytes={len(audio_bytes)}, file={filename!r}) in {latency}ms"
+                f"[Google Free STT] primary={primary} {err_name}: empty "
+                f"fallback=trying alternate={alternate} "
+                f"(bytes={len(audio_bytes)}, file={filename!r})"
             )
         elif isinstance(e, sr.RequestError):
             print(
-                f"[Google Free STT] {err_name}: API/network failure "
-                f"(lang={stt_locale}): {e} in {latency}ms"
+                f"[Google Free STT] primary={primary} {err_name}: API/network "
+                f"fallback=trying alternate={alternate}: {e}"
+            )
+            # Network failure on primary — still try alternate once
+        else:
+            print(
+                f"[Google Free STT] primary={primary} {err_name}: {e!r} "
+                f"fallback=trying alternate={alternate}"
+            )
+
+    # Pass 2: alternate locale only after empty / UnknownValueError / primary failure
+    try:
+        alt_text = (await loop.run_in_executor(None, run_sr, alternate) or "").strip()
+        print(
+            f"[Google Free STT] primary={primary} fallback=tried "
+            f"alt={alternate} chosen={alternate if alt_text else 'none'} "
+            f"result={alt_text!r} in {_elapsed_ms()}ms"
+        )
+        return alt_text, _elapsed_ms()
+    except Exception as e:
+        err_name = type(e).__name__
+        latency = _elapsed_ms()
+        if isinstance(e, sr.UnknownValueError):
+            print(
+                f"[Google Free STT] alt={alternate} {err_name}: no intelligible speech "
+                f"chosen=none in {latency}ms"
+            )
+        elif isinstance(e, sr.RequestError):
+            print(
+                f"[Google Free STT] alt={alternate} {err_name}: API/network failure: {e} "
+                f"chosen=none in {latency}ms"
             )
         else:
             print(
-                f"[Google Free STT Error] {err_name}: {e!r} "
-                f"(lang={stt_locale}, bytes={len(audio_bytes)})"
+                f"[Google Free STT Error] alt={alternate} {err_name}: {e!r} "
+                f"chosen=none in {latency}ms"
             )
         return "", latency
     # --- END MODIFICATION ---

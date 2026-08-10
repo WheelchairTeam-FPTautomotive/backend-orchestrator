@@ -18,6 +18,7 @@ class CommandID(str, Enum):
 
 # Patterns assume normalize_utterance() was applied (tone-free VI + lowercase).
 # --- START MODIFICATION ---
+# Mixed VI/EN + volume vs temp: volume requires volume/am luong; HVAC covers air conditioner / bat ac.
 COMMAND_CONTRACTS = [
     # Door / window (window mocked as DOOR_OPEN for Sprint 2 cockpit)
     (
@@ -25,17 +26,40 @@ COMMAND_CONTRACTS = [
         CommandID.DOOR_OPEN,
     ),
     (r"dong\s*.*cua|close\s*.*door|close\s*.*window", CommandID.DOOR_CLOSE),
-    # Music & volume
+    # Music & volume (volume keyword required — not bare "van ... do/c")
     (r"bat\s*.*nhac|phat\s*.*nhac|play\s*.*music", CommandID.MUSIC_PLAY),
     (
         r"tat\s*.*nhac|dung\s*.*nhac|pause\s*.*music|stop\s*.*music",
         CommandID.MUSIC_PAUSE,
     ),
-    (r"tang\s*.*am\s*luong|to\s+len|volume\s+up", CommandID.VOLUME_UP),
-    (r"giam\s*.*am\s*luong|nho\s+di|volume\s+down", CommandID.VOLUME_DOWN),
-    # HVAC
-    (r"bat\s*.*dieu\s*hoa|mo\s*.*dieu\s*hoa|\bac\s+on\b|\bhvac\s+on\b", CommandID.HVAC_ON),
-    (r"tat\s*.*dieu\s*hoa|\bac\s+off\b|\bhvac\s+off\b", CommandID.HVAC_OFF),
+    (
+        r"(?:giam|nho\s+di).*(?:am\s*luong|volume)"
+        r"|(?:am\s*luong|volume).*(?:xuong|down|giam)"
+        r"|van\s+.*(?:am\s*luong|volume).*(?:xuong|down|giam)"
+        r"|volume\s+down",
+        CommandID.VOLUME_DOWN,
+    ),
+    (
+        r"(?:tang|to\s+len).*(?:am\s*luong|volume)"
+        r"|(?:am\s*luong|volume).*(?:len|up|tang)"
+        r"|van\s+.*(?:am\s*luong|volume).*(?:len|up|tang)"
+        r"|volume\s+up",
+        CommandID.VOLUME_UP,
+    ),
+    # HVAC — pure VI + mixed loanwords (bat air conditioner, turn on dieu hoa)
+    (
+        r"bat\s*.*(?:dieu\s*hoa|may\s*lanh|air\s*conditioner|\bac\b|hvac)"
+        r"|mo\s*.*(?:dieu\s*hoa|may\s*lanh|air\s*conditioner|\bac\b|hvac)"
+        r"|turn\s+on\s*.*(?:dieu\s*hoa|may\s*lanh|air\s*conditioner|\bac\b|hvac)"
+        r"|\bac\s+on\b|\bhvac\s+on\b",
+        CommandID.HVAC_ON,
+    ),
+    (
+        r"tat\s*.*(?:dieu\s*hoa|may\s*lanh|air\s*conditioner|\bac\b|hvac)"
+        r"|turn\s+off\s*.*(?:dieu\s*hoa|may\s*lanh|air\s*conditioner|\bac\b|hvac)"
+        r"|\bac\s+off\b|\bhvac\s+off\b",
+        CommandID.HVAC_OFF,
+    ),
 ]
 # --- END MODIFICATION ---
 
