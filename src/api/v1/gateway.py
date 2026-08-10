@@ -554,12 +554,20 @@ async def route_tts(request: TtsRequest):
     return TtsResponse(audio_base64=base64_str, latency_ms=latency)
 
 @router.post("/copilot/stt", response_model=SttResponse, tags=["voice"], summary="Speech-to-text")
-async def route_stt(file: UploadFile = File(...)):
+async def route_stt(
+    file: UploadFile = File(...),
+    # MODIFIED: UI locale from cockpit (vi|en) → Google vi-VN|en-US
+    language: str = Form("vi"),
+):
     audio_content = await file.read()
     if not audio_content:
         raise HTTPException(status_code=400, detail="Uploaded audio file is empty.")
-    
-    transcript, stt_ms = await transcribe_audio_bytes(audio_content, filename=file.filename or "input_voice.mp3")
+
+    transcript, stt_ms = await transcribe_audio_bytes(
+        audio_content,
+        filename=file.filename or "input_voice.mp3",
+        language=language,
+    )
     # --- START MODIFICATION ---
     # Empty transcript = Google could not understand (not a server crash).
     if not transcript:
@@ -571,7 +579,7 @@ async def route_stt(file: UploadFile = File(...)):
             ),
         )
     # --- END MODIFICATION ---
-        
+
     return SttResponse(transcript=transcript, latency_ms=stt_ms)
 
 @router.post(
@@ -590,12 +598,16 @@ async def route_voice_query(request: Request, file: UploadFile = File(...), lang
             status_code=400, detail="Uploaded audio file is empty."
         )
     
-    transcript, stt_ms = await transcribe_audio_bytes(audio_content, filename=file.filename or "input_voice.mp3")
+    transcript, stt_ms = await transcribe_audio_bytes(
+        audio_content,
+        filename=file.filename or "input_voice.mp3",
+        language=language,
+    )
     if not transcript:
         raise HTTPException(
             status_code=500, detail="Failed to transcribe audio query."
         )
-    
+
     core_ai_start = time.perf_counter()
     # --- START MODIFICATION ---
     raw_utterance = transcript

@@ -291,15 +291,22 @@ async def synthesize_speech_bytes(
 async def transcribe_audio_bytes(
     audio_bytes: bytes,
     filename: str = "input_voice.mp3",
+    language: str = "vi",
 ) -> tuple[str, int]:
     """
-    Transcribes audio bytes into Vietnamese text using Google's FREE Web Speech API.
-    No API Key required! No token limits!
+    Transcribe audio via Google Web Speech API (free, no key).
+
+    language: UI locale ``vi`` | ``en`` → BCP-47 ``vi-VN`` | ``en-US``.
     Returns: (transcribed_text, latency_ms)
     """
     start_time = time.perf_counter()
     if not audio_bytes:
         return "", int((time.perf_counter() - start_time) * 1000)
+
+    # --- START MODIFICATION ---
+    # Map cockpit UI locale to Google STT BCP-47 (was hardcoded vi-VN → EN garbage)
+    stt_locale = "en-US" if (language or "vi").lower().startswith("en") else "vi-VN"
+    # --- END MODIFICATION ---
 
     try:
         import speech_recognition as sr
@@ -309,16 +316,18 @@ async def transcribe_audio_bytes(
 
         def run_sr():
             recognizer = sr.Recognizer()
-            # Recognize using Google Web Speech API (Free, no key required)
             # AudioFile expects PCM WAV (cockpit uploads audio/wav).
             with sr.AudioFile(io.BytesIO(audio_bytes)) as source:
                 audio_data = recognizer.record(source)
-            return recognizer.recognize_google(audio_data, language="vi-VN")
+            return recognizer.recognize_google(audio_data, language=stt_locale)
 
         transcribed_text = await loop.run_in_executor(None, run_sr)
 
         latency = int((time.perf_counter() - start_time) * 1000)
-        print(f"[Google Free STT] Success! Transcribed: '{transcribed_text}' in {latency}ms")
+        print(
+            f"[Google Free STT] lang={stt_locale} Success! "
+            f"Transcribed: '{transcribed_text}' in {latency}ms"
+        )
         return transcribed_text, latency
 
     # --- START MODIFICATION ---
@@ -331,12 +340,18 @@ async def transcribe_audio_bytes(
         if isinstance(e, sr.UnknownValueError):
             print(
                 f"[Google Free STT] {err_name}: no intelligible speech "
-                f"(bytes={len(audio_bytes)}, file={filename!r}) in {latency}ms"
+                f"(lang={stt_locale}, bytes={len(audio_bytes)}, file={filename!r}) in {latency}ms"
             )
         elif isinstance(e, sr.RequestError):
-            print(f"[Google Free STT] {err_name}: API/network failure: {e} in {latency}ms")
+            print(
+                f"[Google Free STT] {err_name}: API/network failure "
+                f"(lang={stt_locale}): {e} in {latency}ms"
+            )
         else:
-            print(f"[Google Free STT Error] {err_name}: {e!r} (bytes={len(audio_bytes)})")
+            print(
+                f"[Google Free STT Error] {err_name}: {e!r} "
+                f"(lang={stt_locale}, bytes={len(audio_bytes)})"
+            )
         return "", latency
     # --- END MODIFICATION ---
 
