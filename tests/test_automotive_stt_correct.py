@@ -39,6 +39,9 @@ def test_non_regression_volume_and_common_words():
     assert correct_automotive_stt("can")[0] == "can"
     assert correct_automotive_stt("hvac")[0].lower() == "hvac"
     assert correct_automotive_stt("epb")[0].lower() == "epb"
+    # Must NOT glue Vietnamese syllables across word boundaries
+    assert correct_automotive_stt("Mở cửa xe bên lái.")[0] == "Mở cửa xe bên lái."
+    assert correct_automotive_stt("Sấy kính sau xe Tucson")[0] == "Sấy kính sau xe Tucson"
 
 
 def test_normalize_for_routing_folds_after_correct():

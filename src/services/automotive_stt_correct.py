@@ -164,10 +164,8 @@ _COMMON_WORD_STOP: frozenset[str] = frozenset(
     }
 )
 
-_SPACED_LETTERS = re.compile(
-    r"(?<![a-z0-9])(?:[a-z](?:\s+[a-z]){1,5})(?![a-z0-9])",
-    re.IGNORECASE,
-)
+# Spaced-letter collapse uses token split (see _collapse_spaced_letters).
+
 _TOKEN = re.compile(r"[a-z0-9]+(?:'[a-z]+)?", re.IGNORECASE)
 
 
@@ -191,18 +189,34 @@ def _levenshtein(a: str, b: str) -> int:
 
 
 def _collapse_spaced_letters(text: str) -> tuple[str, list[tuple[str, str]]]:
-    """Collapse runs like 'e p b' / 'E P B' into 'epb'."""
+    """Collapse runs of standalone single-letter tokens like 'e p b' → 'epb'.
+
+    Does NOT join across normal words (e.g. 'bên lái' stays intact).
+    """
     fixes: list[tuple[str, str]] = []
-
-    def _repl(match: re.Match[str]) -> str:
-        raw = match.group(0)
-        collapsed = re.sub(r"\s+", "", raw).lower()
-        if " " in raw and collapsed:
-            fixes.append((raw, collapsed))
-        return collapsed
-
-    out = _SPACED_LETTERS.sub(_repl, text)
-    return out, fixes
+    # Keep whitespace tokens so we can rebuild the string.
+    parts = re.split(r"(\s+)", text)
+    out: list[str] = []
+    i = 0
+    while i < len(parts):
+        tok = parts[i]
+        if tok.isalpha() and len(tok) == 1:
+            letters = [tok]
+            j = i + 1
+            # Consume: space + single letter, repeatedly
+            while j + 1 < len(parts) and parts[j].isspace() and parts[j + 1].isalpha() and len(parts[j + 1]) == 1:
+                letters.append(parts[j + 1])
+                j += 2
+            if len(letters) >= 2:
+                collapsed = "".join(c.lower() for c in letters)
+                raw = "".join(parts[i:j])
+                fixes.append((raw, collapsed))
+                out.append(collapsed)
+                i = j
+                continue
+        out.append(tok)
+        i += 1
+    return "".join(out), fixes
 
 
 def _apply_explicit_map(text: str) -> tuple[str, list[tuple[str, str]]]:
