@@ -26,6 +26,14 @@ def test_hvec_to_hvac():
     assert "hvac" in _corrected("bat hvec len")
 
 
+def test_carsky_hvac_mishears():
+    # Phonetic / near-miss only — do NOT map arbitrary garbage (e.g. xvideo)
+    assert "hvac" in _corrected("What Is A Sea")
+    assert "hvac" in _corrected("what is a see")
+    assert "hvac" in _corrected("h v a c")
+    assert "xvideo" in _corrected("What is xvideo")  # leave far misses alone
+
+
 def test_spaced_acronyms():
     assert "epb" in _corrected("e p b la gi")
     assert "tpms" in _corrected("tp ms reset")
@@ -42,6 +50,16 @@ def test_non_regression_volume_and_common_words():
     # Must NOT glue Vietnamese syllables across word boundaries
     assert correct_automotive_stt("Mở cửa xe bên lái.")[0] == "Mở cửa xe bên lái."
     assert correct_automotive_stt("Sấy kính sau xe Tucson")[0] == "Sấy kính sau xe Tucson"
+
+
+def test_eco_ecu_never_cross_mapped():
+    # Google often confuses ECU↔ECO; corrector must leave both alone (no hardcode).
+    assert correct_automotive_stt("eco")[0].lower() == "eco"
+    assert correct_automotive_stt("ecu")[0].lower() == "ecu"
+    assert correct_automotive_stt("what is eco")[0].lower() == "what is eco"
+    assert correct_automotive_stt("what is ecu")[0].lower() == "what is ecu"
+    assert correct_automotive_stt("eco")[1] == []
+    assert correct_automotive_stt("ecu")[1] == []
 
 
 def test_normalize_for_routing_folds_after_correct():

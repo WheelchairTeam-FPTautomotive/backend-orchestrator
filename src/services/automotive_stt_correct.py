@@ -32,6 +32,9 @@ CANONICAL_ACRONYMS: frozenset[str] = frozenset(
         "mil",
         "mist",
         "eco",
+        # MODIFIED: ECU is a real OEM term; keep BOTH eco+ecu canonical so
+        # edit-distance never rewrites ecu↔eco (STT confuses them; do NOT hard-map).
+        "ecu",
         "ev",
         "vdc",
         "rcta",
@@ -48,6 +51,14 @@ _EXPLICIT_MAP: tuple[tuple[str, str], ...] = tuple(
             ("electronic parking brake", "epb"),
             ("air conditioner", "hvac"),
             ("aitch vac", "hvac"),
+            # MODIFIED: phonetic / near-miss STT of HVAC/AC (not arbitrary garbage)
+            ("h v a c", "hvac"),
+            ("aitch vee ay see", "hvac"),
+            ("aitchveeaysee", "hvac"),
+            ("a sea", "hvac"),  # common STT of "AC" / trailing of HVAC
+            ("a see", "hvac"),
+            ("acey", "hvac"),
+            ("hivac", "hvac"),
             ("iso fix", "isofix"),
             ("tee pms", "tpms"),
             ("tp ms", "tpms"),
