@@ -58,13 +58,24 @@ def _pcm_to_wav(pcm_data: bytes, sample_rate: int = 24000, channels: int = 1, bi
 
 
 def _is_vietnamese(text: str, language: str) -> bool:
-    return language == "vi" or bool(
+    has_vi_diacritics = bool(
         re.search(
             r"[áàảãạăắằẳẵặâấầẩẫậđéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵ]",
             text,
             re.IGNORECASE,
         )
     )
+    # If the LLM replied with Vietnamese diacritics, it's Vietnamese.
+    if has_vi_diacritics:
+        return True
+    
+    # If there are no diacritics, but there are english alphabet letters, it's likely English.
+    # Because LLM output in Vietnamese would almost certainly contain diacritics.
+    has_letters = bool(re.search(r"[a-z]", text, re.IGNORECASE))
+    if has_letters:
+        return False
+        
+    return language == "vi"
 
 
 async def _synthesize_edge(text: str, *, is_vietnamese: bool) -> bytes | None:
